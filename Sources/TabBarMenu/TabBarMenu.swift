@@ -244,3 +244,46 @@ private final class MenuHostButton: UIButton {
         return false
     }
 }
+
+#if DEBUG
+
+private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuDelegate {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        tabs = [
+            makeTab(title: "Home", systemImageName: "house", identifier: "home"),
+            makeTab(title: "Profile", systemImageName: "person", identifier: "profile")
+        ]
+        menuDelegate = self
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu? {
+        let rename = UIAction(title: "Rename") { _ in }
+        let delete = UIAction(title: "Delete", attributes: .destructive) { _ in }
+        return UIMenu(title: tab.title, children: [rename, delete])
+    }
+
+    private func makeTab(title: String, systemImageName: String, identifier: String) -> UITab {
+        UITab(title: title, image: UIImage(systemName: systemImageName), identifier: identifier) { _ in
+            let controller = UIViewController()
+            controller.view.backgroundColor = .systemBackground
+            controller.title = title
+            return controller
+        }
+    }
+}
+
+private struct TabBarMenuPreview: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UITabBarController {
+        TabBarMenuPreviewController()
+    }
+    func updateUIViewController(_ uiViewController: UITabBarController, context: Context) {}
+}
+
+#Preview("TabBarMenu") {
+    TabBarMenuPreview()
+        .ignoresSafeArea()
+}
+
+#endif
