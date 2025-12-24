@@ -113,6 +113,7 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
 
         tabs = [
             makeTab(title: "Home", systemImageName: "house", identifier: "home"),
+            makeTab(title: "Notifications", systemImageName: "bell", identifier: "notifications"),
             makeTab(title: "Profile", systemImageName: "person", identifier: "profile")
         ]
         menuDelegate = self
@@ -123,17 +124,41 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
         let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in }
         return UIMenu(title: tab.title, children: [rename, delete])
     }
-
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        anchorPlacementFor tab: UITab,
+        tabFrame: CGRect,
+        in containerView: UIView,
+        menuHostButton: UIButton
+    ) -> TabBarMenuAnchorPlacement?{
+        .above()
+    }
     private func makeTab(title: String, systemImageName: String, identifier: String) -> UITab {
         UITab(title: title, image: UIImage(systemName: systemImageName), identifier: identifier) { _ in
-            let controller = UIViewController()
-            controller.view.backgroundColor = .systemBackground
+            let controller = UIHostingController(
+                rootView: SampleTabView(title: title, systemImage: systemImageName)
+            )
             controller.title = title
             return controller
         }
     }
 }
+struct SampleTabView: View {
+    let title: String
+    let systemImage: String
 
+    var body: some View {
+        ContentUnavailableView{
+            Label{
+                Text(title)
+            }icon:{
+                Image(systemName: systemImage)
+                    .symbolVariant(.fill)
+            }
+        }
+        .background(.indigo.gradient)
+    }
+}
 private struct TabBarMenuPreview: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UITabBarController {
         TabBarMenuPreviewController()
