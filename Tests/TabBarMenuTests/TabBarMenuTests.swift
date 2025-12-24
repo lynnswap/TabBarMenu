@@ -22,6 +22,13 @@ private final class TestMenuDelegate: TabBarMenuDelegate {
 }
 
 @MainActor
+private final class SelfDelegatingTabBarController: UITabBarController, TabBarMenuDelegate {
+    func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu? {
+        UIMenu(children: [])
+    }
+}
+
+@MainActor
 private final class WindowHost {
     let window: UIWindow
 
@@ -116,6 +123,7 @@ func menuDelegateAttachesLongPressGestures() async {
 
     context.controller.menuDelegate = delegate
 
+    #expect(context.controller.menuDelegate === delegate)
     let names = menuRecognizerNames(in: context.controller.tabBar)
     let buttonViews = tabBarButtonViews(in: context.controller.tabBar)
     let expectedCount = min(context.tabs.count, buttonViews.count)
@@ -126,6 +134,27 @@ func menuDelegateAttachesLongPressGestures() async {
     #expect(names.count == expectedCount)
     #expect(names == expectedNames)
     #expect(context.host.window.rootViewController === context.controller)
+}
+
+@Test("menuDelegate supports self assignment")
+@MainActor
+func menuDelegateSupportsSelfAssignment() async {
+    let controller = SelfDelegatingTabBarController()
+    controller.tabs = makeTabs(count: 2)
+    let host = WindowHost(rootViewController: controller)
+
+    controller.menuDelegate = controller
+
+    #expect(controller.menuDelegate === controller)
+    let names = menuRecognizerNames(in: controller.tabBar)
+    let buttonViews = tabBarButtonViews(in: controller.tabBar)
+    let expectedCount = min(controller.tabs.count, buttonViews.count)
+    let expectedNames = Set(
+        controller.tabs.prefix(expectedCount).map { TestConstants.menuGesturePrefix + $0.identifier }
+    )
+
+    #expect(names == expectedNames)
+    #expect(host.window.rootViewController === controller)
 }
 
 @Test("menuDelegate refreshes long-press gestures when tabs change")
