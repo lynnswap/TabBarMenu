@@ -131,7 +131,7 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
         in containerView: UIView,
         menuHostButton: UIButton
     ) -> TabBarMenuAnchorPlacement?{
-        .above()
+        .inside
     }
     private func makeTab(title: String, systemImageName: String, identifier: String) -> UITab {
         UITab(title: title, image: UIImage(systemName: systemImageName), identifier: identifier) { _ in

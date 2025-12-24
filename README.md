@@ -2,6 +2,8 @@
 
 TabBarMenu adds long-press context menus to `UITabBarController` tabs on iOS 18+.
 
+![TabBarMenu preview](Docs/images/anchor-above.webp)
+
 ## Requirements
 
 - iOS 18.0+
@@ -68,6 +70,10 @@ final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
 - `.above(offset:)`: places the anchor above the tab bar. The default offset is 8.
 - `.custom(CGPoint)`: uses a custom point in the container view's coordinate space.
 - `.manual`: delegate sets `menuHostButton.frame` manually in `anchorPlacementFor`.
+
+| Inside placement | Above placement |
+| --- | --- |
+| ![Inside placement example](Docs/images/anchor-inside.webp) | ![Above placement example](Docs/images/anchor-above.webp) |
 
 ## License
 
