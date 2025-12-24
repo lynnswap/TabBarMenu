@@ -6,6 +6,12 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private static let longPressNamePrefix = "tabbar.menu."
 
     weak var delegate: TabBarMenuDelegate?
+    var configuration: TabBarMenuConfiguration = .init() {
+        didSet {
+            guard oldValue != configuration else { return }
+            refreshInteractions()
+        }
+    }
     private weak var tabBarController: UITabBarController?
     private var menuHostButton: UIButton?
     private var cancellables = Set<AnyCancellable>()
@@ -82,7 +88,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private func addLongPress(to view: UIView, tabIdentifier: String) {
         let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         recognizer.name = Self.longPressNamePrefix + tabIdentifier
-        recognizer.minimumPressDuration = 0.35
+        recognizer.minimumPressDuration = configuration.minimumPressDuration
         recognizer.cancelsTouchesInView = true
         recognizer.delegate = self
         view.addGestureRecognizer(recognizer)

@@ -45,6 +45,16 @@ final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
 
 Return `nil` to disable the menu for a given tab. Set `menuDelegate = nil` to remove menu handling.
 
+## Configuration
+
+Customize menu behavior via `menuConfiguration` (default minimum press duration is 0.35 seconds).
+
+```swift
+tabBarController.updateMenuConfiguration { configuration in
+    configuration.minimumPressDuration = 0.5
+}
+```
+
 ## Anchor placement
 
 To customize the menu anchor point, implement the optional delegate method that returns

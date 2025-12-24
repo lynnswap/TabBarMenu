@@ -114,6 +114,10 @@ private func menuLongPressRecognizers(in tabBar: UITabBar) -> [UILongPressGestur
 private func menuRecognizerNames(in tabBar: UITabBar) -> Set<String> {
     Set(menuLongPressRecognizers(in: tabBar).compactMap(\.name))
 }
+@MainActor
+private func menuMinimumPressDurations(in tabBar: UITabBar) -> [TimeInterval] {
+    menuLongPressRecognizers(in: tabBar).map(\.minimumPressDuration)
+}
 
 @Test("menuDelegate attaches long-press gestures")
 @MainActor
@@ -218,6 +222,40 @@ func menuDelegateDoesNotDuplicateLongPressGestures() async {
     let updatedNames = menuRecognizerNames(in: context.controller.tabBar)
 
     #expect(updatedNames == initialNames)
+}
+
+@Test("menuConfiguration applies minimumPressDuration")
+@MainActor
+func menuConfigurationAppliesMinimumPressDuration() async {
+    let context = makeTabBarTestContext(tabCount: 2)
+    let delegate = TestMenuDelegate()
+
+    context.controller.menuConfiguration = TabBarMenuConfiguration(minimumPressDuration: 0.5)
+    context.controller.menuDelegate = delegate
+
+    let durations = menuMinimumPressDurations(in: context.controller.tabBar)
+
+    #expect(!durations.isEmpty)
+    #expect(durations.allSatisfy { abs($0 - 0.5) < 0.001 })
+}
+
+@Test("menuConfiguration updates minimumPressDuration")
+@MainActor
+func menuConfigurationUpdatesMinimumPressDuration() async {
+    let context = makeTabBarTestContext(tabCount: 2)
+    let delegate = TestMenuDelegate()
+
+    context.controller.menuDelegate = delegate
+    let initialDurations = menuMinimumPressDurations(in: context.controller.tabBar)
+
+    context.controller.updateMenuConfiguration { configuration in
+        configuration.minimumPressDuration = 0.6
+    }
+
+    let updatedDurations = menuMinimumPressDurations(in: context.controller.tabBar)
+
+    #expect(!initialDurations.isEmpty)
+    #expect(updatedDurations.allSatisfy { abs($0 - 0.6) < 0.001 })
 }
 
 @Test("coordinator reattaches to a different tab bar controller")

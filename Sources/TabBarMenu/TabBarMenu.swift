@@ -18,6 +18,16 @@ public enum TabBarMenuAnchorPlacement: Equatable {
     case manual
 }
 
+/// Configuration for TabBarMenu behaviors.
+public struct TabBarMenuConfiguration: Equatable {
+    /// The minimum press duration required to trigger the menu.
+    public var minimumPressDuration: TimeInterval
+
+    public init(minimumPressDuration: TimeInterval = 0.35) {
+        self.minimumPressDuration = minimumPressDuration
+    }
+}
+
 @MainActor
 /// A delegate that provides contextual menus for tabs in a `UITabBarController`.
 /// - Important: Return `nil` to disable the menu for a given tab.
@@ -72,6 +82,7 @@ public extension UITabBarController {
             if let delegate = newValue {
                 let coordinator = tabBarMenuCoordinator ?? TabBarMenuCoordinator()
                 coordinator.delegate = delegate
+                coordinator.configuration = tabBarMenuConfiguration
                 coordinator.attach(to: self)
                 tabBarMenuCoordinator = coordinator
             } else {
@@ -82,6 +93,23 @@ public extension UITabBarController {
                 tabBarMenuCoordinator = nil
             }
         }
+    }
+
+    /// Configuration for TabBarMenu behaviors.
+    var menuConfiguration: TabBarMenuConfiguration {
+        get {
+            tabBarMenuConfiguration
+        }
+        set {
+            tabBarMenuConfiguration = newValue
+        }
+    }
+
+    /// Updates the configuration using an inout block.
+    func updateMenuConfiguration(_ update: (inout TabBarMenuConfiguration) -> Void) {
+        var configuration = menuConfiguration
+        update(&configuration)
+        menuConfiguration = configuration
     }
 
     private var tabBarMenuCoordinator: TabBarMenuCoordinator? {
@@ -97,12 +125,49 @@ public extension UITabBarController {
             )
         }
     }
+
+    private var tabBarMenuConfiguration: TabBarMenuConfiguration {
+        get {
+            if let box = objc_getAssociatedObject(self, &TabBarMenuAssociatedKeys.configuration) as? TabBarMenuConfigurationBox {
+                return box.value
+            }
+            let defaultValue = TabBarMenuConfiguration()
+            objc_setAssociatedObject(
+                self,
+                &TabBarMenuAssociatedKeys.configuration,
+                TabBarMenuConfigurationBox(defaultValue),
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+            return defaultValue
+        }
+        set {
+            let box = (objc_getAssociatedObject(self, &TabBarMenuAssociatedKeys.configuration) as? TabBarMenuConfigurationBox)
+                ?? TabBarMenuConfigurationBox(newValue)
+            box.value = newValue
+            objc_setAssociatedObject(
+                self,
+                &TabBarMenuAssociatedKeys.configuration,
+                box,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+            tabBarMenuCoordinator?.configuration = newValue
+        }
+    }
 }
 
 
 @MainActor
 private enum TabBarMenuAssociatedKeys {
     static var coordinator = UInt8(0)
+    static var configuration = UInt8(1)
+}
+
+private final class TabBarMenuConfigurationBox {
+    var value: TabBarMenuConfiguration
+
+    init(_ value: TabBarMenuConfiguration) {
+        self.value = value
+    }
 }
 
 #if DEBUG
