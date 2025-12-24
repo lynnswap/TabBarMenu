@@ -43,6 +43,32 @@ final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
 
 Return `nil` to disable the menu for a given tab. Set `menuDelegate = nil` to remove menu handling.
 
+## Anchor placement
+
+To customize the menu anchor point, implement the optional delegate method that returns
+`TabBarMenuAnchorPlacement`. Return `nil` to keep the default placement (inside the tab bar).
+
+```swift
+final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        anchorPlacementFor tab: UITab,
+        tabFrame: CGRect,
+        in containerView: UIView,
+        menuHostButton: UIButton
+    ) -> TabBarMenuAnchorPlacement? {
+        .aboveTabBar()
+    }
+}
+```
+
+## TabBarMenuAnchorPlacement
+
+- `.insideTabBar`: uses the default anchor point inside the tab bar.
+- `.aboveTabBar(offset:)`: places the anchor above the tab bar. The default offset is 8.
+- `.custom(CGPoint)`: uses a custom point in the container view's coordinate space.
+- `.manual`: delegate sets `menuHostButton.frame` manually in `anchorPlacementFor`.
+
 ## License
 
-MIT. See `LICENSE`.
+MIT. See [LICENSE](LICENSE).
