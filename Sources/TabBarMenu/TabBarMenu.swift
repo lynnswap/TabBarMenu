@@ -3,6 +3,7 @@
 
 import SwiftUI
 import ObjectiveC
+import Combine
 
 
 @MainActor
@@ -58,26 +59,35 @@ public extension UITabBarController {
 }
 
 
+@MainActor
 final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private static let longPressNamePrefix = "tabbar.menu."
 
     weak var delegate: TabBarMenuDelegate?
     private weak var tabBarController: UITabBarController?
     private var menuHostButton: UIButton?
+    private var cancellables = Set<AnyCancellable>()
+
+    @MainActor deinit {
+        stopObservingTabs()
+    }
 
     func attach(to tabBarController: UITabBarController) {
         if self.tabBarController !== tabBarController {
+            stopObservingTabs()
             if let tabBar = self.tabBarController?.tabBar {
                 removeLongPressGestures(from: tabBar)
             }
             menuHostButton?.removeFromSuperview()
             menuHostButton = nil
             self.tabBarController = tabBarController
+            startObservingTabs()
         }
         refreshInteractions()
     }
 
     func detach() {
+        stopObservingTabs()
         if let tabBar = tabBarController?.tabBar {
             removeLongPressGestures(from: tabBar)
         }
@@ -105,6 +115,26 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         for index in 0..<count {
             addLongPress(to: buttons[index], tabIdentifier: tabs[index].identifier)
         }
+    }
+
+    private func startObservingTabs() {
+        guard let tabBarController = tabBarController, cancellables.isEmpty else {
+            return
+        }
+        tabBarController.publisher(for: \.tabs)
+            .removeDuplicates(by: { left, right in
+                left.map(\.identifier) == right.map(\.identifier)
+            })
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.refreshInteractions()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func stopObservingTabs() {
+        cancellables.removeAll()
     }
 
     private func addLongPress(to view: UIView, tabIdentifier: String) {
