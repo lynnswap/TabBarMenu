@@ -128,6 +128,41 @@ func menuDelegateAttachesLongPressGestures() async {
     #expect(context.host.window.rootViewController === context.controller)
 }
 
+@Test("menuDelegate refreshes long-press gestures when tabs change")
+@MainActor
+func menuDelegateRefreshesLongPressGesturesWhenTabsChange() async {
+    let context = makeTabBarTestContext(tabCount: 2)
+    let delegate = TestMenuDelegate()
+
+    context.controller.menuDelegate = delegate
+
+    let initialNames = menuRecognizerNames(in: context.controller.tabBar)
+
+    let updatedTabs = (0..<3).map { index in
+        UITab(
+            title: "Updated \(index)",
+            image: nil,
+            identifier: "updated.\(index)",
+            viewControllerProvider: { _ in UIViewController() }
+        )
+    }
+
+    context.controller.tabs = updatedTabs
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+    await Task.yield()
+
+    let updatedNames = menuRecognizerNames(in: context.controller.tabBar)
+    let buttonViews = tabBarButtonViews(in: context.controller.tabBar)
+    let expectedCount = min(updatedTabs.count, buttonViews.count)
+    let expectedNames = Set(
+        updatedTabs.prefix(expectedCount).map { TestConstants.menuGesturePrefix + $0.identifier }
+    )
+
+    #expect(updatedNames == expectedNames)
+    #expect(updatedNames != initialNames)
+}
+
 @Test("menuDelegate clears long-press gestures when unset")
 @MainActor
 func menuDelegateClearsLongPressGesturesWhenUnset() async {
