@@ -57,15 +57,15 @@ final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
         in containerView: UIView,
         menuHostButton: UIButton
     ) -> TabBarMenuAnchorPlacement? {
-        .aboveTabBar()
+        .above()
     }
 }
 ```
 
 ## TabBarMenuAnchorPlacement
 
-- `.insideTabBar`: uses the default anchor point inside the tab bar.
-- `.aboveTabBar(offset:)`: places the anchor above the tab bar. The default offset is 8.
+- `.inside`: uses the default anchor point inside the tab bar.
+- `.above(offset:)`: places the anchor above the tab bar. The default offset is 8.
 - `.custom(CGPoint)`: uses a custom point in the container view's coordinate space.
 - `.manual`: delegate sets `menuHostButton.frame` manually in `anchorPlacementFor`.
 

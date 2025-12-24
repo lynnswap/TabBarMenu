@@ -169,10 +169,10 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             menuHostButton: hostButton
         )
         let anchorPoint: CGPoint?
-        switch placement ?? .insideTabBar {
-        case .insideTabBar:
+        switch placement ?? .inside {
+        case .inside:
             anchorPoint = CGPoint(x: tabFrame.midX, y: ( tabFrame.maxY + tabFrame.midY) * 0.5 )
-        case .aboveTabBar(let offset):
+        case .above(let offset):
             anchorPoint = CGPoint(x: tabFrame.midX, y: tabFrame.minY - offset)
         case .custom(let point):
             anchorPoint = point
