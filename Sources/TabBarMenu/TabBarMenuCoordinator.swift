@@ -161,14 +161,33 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
         let hostButton = makeMenuHostButton(in: containerView)
         let tabFrame = view.convert(view.bounds, to: containerView)
-        let anchorPoint = CGPoint(x: tabFrame.midX, y: ( tabFrame.maxY + tabFrame.midY) * 0.5 )
-        let anchorSize: CGFloat = 2
-        hostButton.frame = CGRect(
-            x: anchorPoint.x - anchorSize / 2,
-            y: anchorPoint.y - anchorSize / 2,
-            width: anchorSize,
-            height: anchorSize
+        let placement = delegate?.tabBarController(
+            tabBarController,
+            anchorPlacementFor: tab,
+            tabFrame: tabFrame,
+            in: containerView,
+            menuHostButton: hostButton
         )
+        let anchorPoint: CGPoint?
+        switch placement ?? .insideTabBar {
+        case .insideTabBar:
+            anchorPoint = CGPoint(x: tabFrame.midX, y: ( tabFrame.maxY + tabFrame.midY) * 0.5 )
+        case .aboveTabBar(let offset):
+            anchorPoint = CGPoint(x: tabFrame.midX, y: tabFrame.minY - offset)
+        case .custom(let point):
+            anchorPoint = point
+        case .manual:
+            anchorPoint = nil
+        }
+        if let anchorPoint {
+            let anchorSize: CGFloat = 2
+            hostButton.frame = CGRect(
+                x: anchorPoint.x - anchorSize / 2,
+                y: anchorPoint.y - anchorSize / 2,
+                width: anchorSize,
+                height: anchorSize
+            )
+        }
         hostButton.menu = menu
         presentMenu(from: hostButton)
         cancelTabBarTracking(for: view)

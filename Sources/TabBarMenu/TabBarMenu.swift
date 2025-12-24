@@ -5,6 +5,19 @@ import SwiftUI
 import ObjectiveC
 
 
+/// Defines where the menu anchor should be placed within the container view.
+public enum TabBarMenuAnchorPlacement: Equatable {
+    /// Uses the default anchor point inside the tab bar.
+    case insideTabBar
+    /// Places the anchor above the tab bar, offset from the tab's top edge.
+    /// Defaults to 8 when omitted.
+    case aboveTabBar(offset: CGFloat = 8)
+    /// Uses a custom point in the container view's coordinate space.
+    case custom(CGPoint)
+    /// Delegate handles `menuHostButton` positioning manually.
+    case manual
+}
+
 @MainActor
 /// A delegate that provides contextual menus for tabs in a `UITabBarController`.
 /// - Important: Return `nil` to disable the menu for a given tab.
@@ -15,6 +28,35 @@ public protocol TabBarMenuDelegate: AnyObject {
     ///   - tab: The tab associated with the long-pressed item.
     /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
     func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu?
+
+    /// Asks the delegate for the anchor placement for the menu.
+    /// - Parameters:
+    ///   - tabBarController: The tab bar controller requesting the anchor placement.
+    ///   - tab: The tab associated with the long-pressed item.
+    ///   - tabFrame: The tab bar item frame in `containerView` coordinates.
+    ///   - containerView: The view hosting the menu.
+    ///   - menuHostButton: The internal button used to present the menu.
+    /// - Returns: The placement to use, or `nil` to use the default placement.
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        anchorPlacementFor tab: UITab,
+        tabFrame: CGRect,
+        in containerView: UIView,
+        menuHostButton: UIButton
+    ) -> TabBarMenuAnchorPlacement?
+}
+
+@MainActor
+public extension TabBarMenuDelegate {
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        anchorPlacementFor tab: UITab,
+        tabFrame: CGRect,
+        in containerView: UIView,
+        menuHostButton: UIButton
+    ) -> TabBarMenuAnchorPlacement? {
+        nil
+    }
 }
 
 @MainActor
