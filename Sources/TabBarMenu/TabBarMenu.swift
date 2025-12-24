@@ -119,8 +119,8 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
     }
 
     func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu? {
-        let rename = UIAction(title: "Rename") { _ in }
-        let delete = UIAction(title: "Delete", attributes: .destructive) { _ in }
+        let rename = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in }
+        let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in }
         return UIMenu(title: tab.title, children: [rename, delete])
     }
 
