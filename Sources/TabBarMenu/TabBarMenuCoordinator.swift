@@ -164,8 +164,8 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         let anchorPoint = CGPoint(x: tabFrame.midX, y: ( tabFrame.maxY + tabFrame.midY) * 0.5 )
         let anchorSize: CGFloat = 2
         hostButton.frame = CGRect(
-            x: anchorPoint.x,
-            y: anchorPoint.y,
+            x: anchorPoint.x - anchorSize / 2,
+            y: anchorPoint.y - anchorSize / 2,
             width: anchorSize,
             height: anchorSize
         )
