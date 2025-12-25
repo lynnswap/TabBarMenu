@@ -101,7 +101,7 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
         menuHostButton: UIButton
     ) -> TabBarMenuAnchorPlacement?{
         menuHostButton.preferredMenuElementOrder = .fixed
-        return .inside
+        return nil
     }
     
 }
