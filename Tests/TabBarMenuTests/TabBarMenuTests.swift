@@ -1,5 +1,6 @@
 import Testing
 import UIKit
+import Combine
 @testable import TabBarMenu
 
 private enum TestConstants {
@@ -25,6 +26,19 @@ private final class TestMenuDelegate: TabBarMenuDelegate {
 private final class SelfDelegatingTabBarController: UITabBarController, TabBarMenuDelegate {
     func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu? {
         UIMenu(children: [])
+    }
+}
+
+@MainActor
+private final class TabChangeRecorder {
+    private(set) var events: [[UITab]] = []
+    private var cancellable: AnyCancellable?
+
+    init(controller: UITabBarController) {
+        cancellable = controller.tabsDidChangePublisher
+            .sink { [weak self] tabs in
+                self?.events.append(tabs)
+            }
     }
 }
 
@@ -58,6 +72,16 @@ private func makeTabs(count: Int) -> [UITab] {
             viewControllerProvider: { _ in UIViewController() }
         )
     }
+}
+
+@MainActor
+private func makeTab(identifier: String) -> UITab {
+    UITab(
+        title: identifier,
+        image: nil,
+        identifier: identifier,
+        viewControllerProvider: { _ in UIViewController() }
+    )
 }
 
 @MainActor
@@ -117,6 +141,64 @@ private func menuRecognizerNames(in tabBar: UITabBar) -> Set<String> {
 @MainActor
 private func menuMinimumPressDurations(in tabBar: UITabBar) -> [TimeInterval] {
     menuLongPressRecognizers(in: tabBar).map(\.minimumPressDuration)
+}
+
+@Test("tabsDidChangePublisher emits when tabs are assigned")
+@MainActor
+func tabsDidChangePublisherEmitsOnAssignment() async {
+    let context = makeTabBarTestContext(tabCount: 2)
+    let recorder = TabChangeRecorder(controller: context.controller)
+    let updated = makeTabs(count: 3)
+    let baseCount = recorder.events.count
+
+    context.controller.tabs = updated
+    await Task.yield()
+
+    #expect(recorder.events.count == baseCount + 1)
+    #expect(recorder.events.last?.map(\.identifier) == updated.map(\.identifier))
+}
+
+@Test("tabsDidChangePublisher emits when setTabs is called")
+@MainActor
+func tabsDidChangePublisherEmitsOnSetTabs() async {
+    let context = makeTabBarTestContext(tabCount: 2)
+    let recorder = TabChangeRecorder(controller: context.controller)
+    let updated = makeTabs(count: 1)
+    let baseCount = recorder.events.count
+
+    context.controller.setTabs(updated, animated: false)
+    await Task.yield()
+
+    #expect(recorder.events.count == baseCount + 1)
+    #expect(recorder.events.last?.map(\.identifier) == updated.map(\.identifier))
+}
+
+@Test("tabsDidChangePublisher emits for in-place mutations")
+@MainActor
+func tabsDidChangePublisherEmitsForInPlaceMutations() async {
+    let context = makeTabBarTestContext(tabCount: 2)
+    let recorder = TabChangeRecorder(controller: context.controller)
+    var expectedCount = recorder.events.count
+
+    context.controller.tabs.append(makeTab(identifier: "append"))
+    expectedCount += 1
+    await Task.yield()
+    #expect(recorder.events.count == expectedCount)
+
+    context.controller.tabs[0] = makeTab(identifier: "replace")
+    expectedCount += 1
+    await Task.yield()
+    #expect(recorder.events.count == expectedCount)
+
+    context.controller.tabs.insert(makeTab(identifier: "insert"), at: 1)
+    expectedCount += 1
+    await Task.yield()
+    #expect(recorder.events.count == expectedCount)
+
+    _ = context.controller.tabs.removeLast()
+    expectedCount += 1
+    await Task.yield()
+    #expect(recorder.events.count == expectedCount)
 }
 
 @Test("menuDelegate attaches long-press gestures")
