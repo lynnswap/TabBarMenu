@@ -2,6 +2,7 @@
 // https://docs.swift.org/swift-book
 
 import SwiftUI
+import Observation
 import ObjectiveC
 
 
@@ -173,21 +174,89 @@ private final class TabBarMenuConfigurationBox {
 
 #if DEBUG
 
-private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuDelegate {
-    override func viewDidLoad() {
-        super.viewDidLoad()
+private struct PreviewTab: Equatable {
+    let title: String
+    let systemImageName: String
+    let identifier: String
+}
 
-        tabs = [
-            makeTab(title: "Home", systemImageName: "house", identifier: "home"),
-            makeTab(title: "Notifications", systemImageName: "bell", identifier: "notifications"),
-            makeTab(title: "Profile", systemImageName: "person", identifier: "profile")
-        ]
-        menuDelegate = self
+private enum PreviewTabDefaults {
+    static let initialTabs: [PreviewTab] = [
+        PreviewTab(title: "Home", systemImageName: "house", identifier: "home"),
+        PreviewTab(title: "Notifications", systemImageName: "bell", identifier: "notifications"),
+        PreviewTab(title: "Profile", systemImageName: "person", identifier: "profile")
+    ]
+
+    static func nextTab(for index: Int) -> PreviewTab {
+        PreviewTab(
+            title: "Extra \(index)",
+            systemImageName: "star",
+            identifier: "extra.\(index)"
+        )
     }
+}
+
+@MainActor
+@Observable
+private final class TabBarMenuPreviewViewModel {
+    var tabs: [PreviewTab] {
+        didSet {
+            applyTabs()
+        }
+    }
+    private weak var previewController: TabBarMenuPreviewBaseController?
+
+    init(tabs: [PreviewTab] = PreviewTabDefaults.initialTabs) {
+        self.tabs = tabs
+    }
+
+    func register(_ controller: TabBarMenuPreviewBaseController) {
+        previewController = controller
+        configure(controller)
+        controller.applyPreviewTabs(tabs)
+    }
+
+    func addTab() {
+        let extraIndex = tabs.count - PreviewTabDefaults.initialTabs.count + 1
+        tabs.append(PreviewTabDefaults.nextTab(for: extraIndex))
+    }
+
+    func deleteTab(_ tab: UITab) {
+        let identifier = tab.identifier
+        tabs.removeAll { previewTab in
+            if !identifier.isEmpty, previewTab.identifier == identifier {
+                return true
+            }
+            return previewTab.title == tab.title
+        }
+    }
+
+    private func applyTabs() {
+        previewController?.applyPreviewTabs(tabs)
+    }
+
+    private func configure(_ controller: TabBarMenuPreviewBaseController) {
+        controller.menuDelegate = controller
+        controller.viewModel = self
+    }
+}
+
+private enum TabBarMenuPreviewMode {
+    case uiTab
+    case uiTabBarItem
+}
+
+@MainActor
+private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDelegate {
+    weak var viewModel: TabBarMenuPreviewViewModel?
+
+    func applyPreviewTabs(_ previewTabs: [PreviewTab]) {}
 
     func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu? {
         let rename = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in }
-        let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in }
+        let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+            self?.viewModel?.deleteTab(tab)
+        }
         return UIMenu(title: tab.title, children: [rename, delete])
     }
     func tabBarController(
@@ -200,14 +269,49 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
         menuHostButton.preferredMenuElementOrder = .fixed
         return .inside
     }
-    private func makeTab(title: String, systemImageName: String, identifier: String) -> UITab {
-        UITab(title: title, image: UIImage(systemName: systemImageName), identifier: identifier) { _ in
+    
+}
+
+private final class TabBarMenuPreviewTabsController: TabBarMenuPreviewBaseController {
+    private var hasAppliedTabs = false
+
+    override func applyPreviewTabs(_ previewTabs: [PreviewTab]) {
+        let updatedTabs = previewTabs.map { makeTab($0) }
+        let shouldAnimate = hasAppliedTabs
+        setTabs(updatedTabs, animated: shouldAnimate)
+        hasAppliedTabs = true
+    }
+    func makeTab(_ tab: PreviewTab) -> UITab {
+        UITab(title: tab.title, image: UIImage(systemName: tab.systemImageName), identifier: tab.identifier) { _ in
             let controller = UIHostingController(
-                rootView: SampleTabView(title: title, systemImage: systemImageName)
+                rootView: SampleTabView(title: tab.title, systemImage: tab.systemImageName)
             )
-            controller.title = title
+            controller.title = tab.title
             return controller
         }
+    }
+}
+
+private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseController {
+    private var hasAppliedTabs = false
+
+    override func applyPreviewTabs(_ previewTabs: [PreviewTab]) {
+        let updatedViewControllers = previewTabs.map { makeTab($0) }
+        let shouldAnimate = hasAppliedTabs
+        setViewControllers(updatedViewControllers, animated: shouldAnimate)
+        hasAppliedTabs = true
+    }
+    func makeTab(_ tab: PreviewTab) -> UIViewController {
+        let controller = UIHostingController(
+            rootView: SampleTabView(title: tab.title, systemImage: tab.systemImageName)
+        )
+        controller.title = tab.title
+        controller.tabBarItem = UITabBarItem(
+            title: tab.title,
+            image: UIImage(systemName: tab.systemImageName),
+            selectedImage: UIImage(systemName: "\(tab.systemImageName).fill")
+        )
+        return controller
     }
 }
 struct SampleTabView: View {
@@ -226,16 +330,55 @@ struct SampleTabView: View {
         .background(.indigo.gradient)
     }
 }
-private struct TabBarMenuPreview: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UITabBarController {
-        TabBarMenuPreviewController()
+private struct TabBarMenuPreviewRepresentable: UIViewControllerRepresentable {
+    let mode: TabBarMenuPreviewMode
+    let viewModel: TabBarMenuPreviewViewModel
+
+    func makeUIViewController(context: Context) -> TabBarMenuPreviewBaseController {
+        let controller: TabBarMenuPreviewBaseController
+        switch mode {
+        case .uiTab:
+            controller = TabBarMenuPreviewTabsController()
+        case .uiTabBarItem:
+            controller = TabBarMenuPreviewItemsController()
+        }
+        viewModel.register(controller)
+        return controller
     }
-    func updateUIViewController(_ uiViewController: UITabBarController, context: Context) {}
+
+    func updateUIViewController(_ uiViewController: TabBarMenuPreviewBaseController, context: Context) {}
 }
 
-#Preview("TabBarMenu") {
-    TabBarMenuPreview()
-        .ignoresSafeArea()
+private struct TabBarMenuPreviewScreen: View {
+    let mode: TabBarMenuPreviewMode
+    @State private var viewModel = TabBarMenuPreviewViewModel()
+
+    var body: some View {
+        NavigationStack {
+            previewContent
+                .ignoresSafeArea()
+                .toolbar{
+                    ToolbarItem{
+                        Button("Add"){
+                            viewModel.addTab()
+                        }
+                    }
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
+        TabBarMenuPreviewRepresentable(mode: mode, viewModel: viewModel)
+    }
+}
+
+#Preview("TabBarMenu UITab") {
+    TabBarMenuPreviewScreen(mode: .uiTab)
+}
+
+#Preview("TabBarMenu UITabBarItem") {
+    TabBarMenuPreviewScreen(mode: .uiTabBarItem)
 }
 
 #endif
