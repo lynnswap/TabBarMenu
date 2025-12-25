@@ -3,8 +3,6 @@ import Combine
 
 @MainActor
 final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
-    private static let longPressNamePrefix = "tabbar.menu."
-
     weak var delegate: TabBarMenuDelegate?
     var configuration: TabBarMenuConfiguration = .init() {
         didSet {
@@ -49,14 +47,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return
         }
         let tabBar = tabBarController.tabBar
-
-        let buttons = tabBarButtonViews(in: tabBar)
-
         removeLongPressGestures(from: tabBar)
-        let tabs = tabBarController.tabs
-        let count = min(buttons.count, tabs.count)
-        for index in 0..<count {
-            addLongPress(to: buttons[index], tabIdentifier: tabs[index].identifier)
+        for (index, view) in tabBarIndexedViews(in: tabBar) {
+            addLongPress(to: view, tabIndex: index)
         }
     }
 
@@ -77,9 +70,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         cancellables.removeAll()
     }
 
-    private func addLongPress(to view: UIView, tabIdentifier: String) {
-        let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
-        recognizer.name = Self.longPressNamePrefix + tabIdentifier
+    private func addLongPress(to view: UIView, tabIndex: Int) {
+        let recognizer = TabBarMenuLongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        recognizer.tabIndex = tabIndex
         recognizer.minimumPressDuration = configuration.minimumPressDuration
         recognizer.cancelsTouchesInView = true
         recognizer.delegate = self
@@ -92,8 +85,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
                 continue
             }
             for recognizer in recognizers {
-                guard let name = recognizer.name,
-                      name.hasPrefix(Self.longPressNamePrefix) else {
+                guard recognizer is TabBarMenuLongPressGestureRecognizer else {
                     continue
                 }
                 control.removeGestureRecognizer(recognizer)
@@ -132,6 +124,20 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return result
     }
 
+    private func tabBarIndexedViews(in tabBar: UITabBar) -> [(Int, UIView)] {
+        if let items = tabBar.items, !items.isEmpty {
+            let indexedViews = items.enumerated().compactMap { index, item in
+                tabBarItemView(item).map { (index, $0) }
+            }
+            if !indexedViews.isEmpty {
+                return indexedViews
+            }
+        }
+        return tabBarControls(in: tabBar).enumerated().map { (index, view) in
+            (index, view)
+        }
+    }
+
     private func makeMenuHostButton(in containerView: UIView) -> UIButton {
         menuHostButton?.removeFromSuperview()
         let button = MenuHostButton(type: .custom)
@@ -146,14 +152,16 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard recognizer.state == .began,
               let view = recognizer.view,
               let tabBarController = tabBarController,
-              let name = recognizer.name,
-              name.hasPrefix(Self.longPressNamePrefix) else {
+              let longPressRecognizer = recognizer as? TabBarMenuLongPressGestureRecognizer else {
             return
         }
-        let identifier = String(name.dropFirst(Self.longPressNamePrefix.count))
-        guard !identifier.isEmpty,
-              let tab = tabBarController.tab(forIdentifier: identifier),
-              let menu = delegate?.tabBarController(tabBarController, tab: tab),
+        let index = longPressRecognizer.tabIndex
+        let tabs = tabBarController.tabs
+        guard tabs.indices.contains(index) else {
+            return
+        }
+        let tab = tabs[index]
+        guard let menu = delegate?.tabBarController(tabBarController, tab: tab),
               let containerView = tabBarController.view ?? view.window?.rootViewController?.view else {
             return
         }
@@ -201,19 +209,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return true
     }
 
-    private func tabBarButtonViews(in tabBar: UITabBar) -> [UIView] {
-        if let items = tabBar.items, !items.isEmpty {
-            let itemViews = items.compactMap { item -> UIView? in
-                tabBarItemView(item)
-            }
-            if !itemViews.isEmpty {
-                return itemViews
-            }
-        }
-
-        return tabBarControls(in: tabBar)
-    }
-
     private func tabBarItemView(_ item: UITabBarItem) -> UIView? {
         if let view = performSelector("view", on: item) as? UIView {
             return view
@@ -228,6 +223,11 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
         return object.perform(selector)?.takeUnretainedValue()
     }
+}
+
+@MainActor
+final class TabBarMenuLongPressGestureRecognizer: UILongPressGestureRecognizer {
+    var tabIndex: Int = 0
 }
 
 private final class MenuHostButton: UIButton {
