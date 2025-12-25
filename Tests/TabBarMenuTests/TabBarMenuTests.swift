@@ -30,14 +30,14 @@ private final class SelfDelegatingTabBarController: UITabBarController, TabBarMe
 }
 
 @MainActor
-private final class TabChangeRecorder {
-    private(set) var events: [[UITab]] = []
+private final class TabBarItemsChangeRecorder {
+    private(set) var events: [[UITabBarItem]] = []
     private var cancellable: AnyCancellable?
 
-    init(controller: UITabBarController) {
-        cancellable = controller.tabsDidChangePublisher
-            .sink { [weak self] tabs in
-                self?.events.append(tabs)
+    init(tabBar: UITabBar) {
+        cancellable = tabBar.itemsDidChangePublisher
+            .sink { [weak self] items in
+                self?.events.append(items)
             }
     }
 }
@@ -75,13 +75,10 @@ private func makeTabs(count: Int) -> [UITab] {
 }
 
 @MainActor
-private func makeTab(identifier: String) -> UITab {
-    UITab(
-        title: identifier,
-        image: nil,
-        identifier: identifier,
-        viewControllerProvider: { _ in UIViewController() }
-    )
+private func makeTabBarItems(count: Int) -> [UITabBarItem] {
+    (0..<count).map { index in
+        UITabBarItem(title: "Item \(index)", image: nil, tag: index)
+    }
 }
 
 @MainActor
@@ -143,59 +140,63 @@ private func menuMinimumPressDurations(in tabBar: UITabBar) -> [TimeInterval] {
     menuLongPressRecognizers(in: tabBar).map(\.minimumPressDuration)
 }
 
-@Test("tabsDidChangePublisher emits when tabs are assigned")
+@Test("itemsDidChangePublisher emits when items are assigned")
 @MainActor
-func tabsDidChangePublisherEmitsOnAssignment() async {
-    let context = makeTabBarTestContext(tabCount: 2)
-    let recorder = TabChangeRecorder(controller: context.controller)
-    let updated = makeTabs(count: 3)
+func itemsDidChangePublisherEmitsOnAssignment() async {
+    let tabBar = UITabBar()
+    let recorder = TabBarItemsChangeRecorder(tabBar: tabBar)
+    let updatedItems = makeTabBarItems(count: 3)
     let baseCount = recorder.events.count
 
-    context.controller.tabs = updated
+    tabBar.items = updatedItems
     await Task.yield()
 
     #expect(recorder.events.count == baseCount + 1)
-    #expect(recorder.events.last?.map(\.identifier) == updated.map(\.identifier))
+    #expect(recorder.events.last?.map(\.tag) == updatedItems.map(\.tag))
 }
 
-@Test("tabsDidChangePublisher emits when setTabs is called")
+@Test("itemsDidChangePublisher emits when setItems is called")
 @MainActor
-func tabsDidChangePublisherEmitsOnSetTabs() async {
-    let context = makeTabBarTestContext(tabCount: 2)
-    let recorder = TabChangeRecorder(controller: context.controller)
-    let updated = makeTabs(count: 1)
+func itemsDidChangePublisherEmitsOnSetItems() async {
+    let tabBar = UITabBar()
+    let recorder = TabBarItemsChangeRecorder(tabBar: tabBar)
+    let updatedItems = makeTabBarItems(count: 1)
     let baseCount = recorder.events.count
 
-    context.controller.setTabs(updated, animated: false)
+    tabBar.setItems(updatedItems, animated: false)
     await Task.yield()
 
     #expect(recorder.events.count == baseCount + 1)
-    #expect(recorder.events.last?.map(\.identifier) == updated.map(\.identifier))
+    #expect(recorder.events.last?.map(\.tag) == updatedItems.map(\.tag))
 }
 
-@Test("tabsDidChangePublisher emits for in-place mutations")
+@Test("itemsDidChangePublisher emits for in-place mutations")
 @MainActor
-func tabsDidChangePublisherEmitsForInPlaceMutations() async {
-    let context = makeTabBarTestContext(tabCount: 2)
-    let recorder = TabChangeRecorder(controller: context.controller)
+func itemsDidChangePublisherEmitsForInPlaceMutations() async {
+    let tabBar = UITabBar()
+    let recorder = TabBarItemsChangeRecorder(tabBar: tabBar)
+    tabBar.items = makeTabBarItems(count: 2)
     var expectedCount = recorder.events.count
 
-    context.controller.tabs.append(makeTab(identifier: "append"))
+    tabBar.items?.append(UITabBarItem(title: "Append", image: nil, tag: 99))
     expectedCount += 1
     await Task.yield()
     #expect(recorder.events.count == expectedCount)
 
-    context.controller.tabs[0] = makeTab(identifier: "replace")
+    if var items = tabBar.items, !items.isEmpty {
+        items[0] = UITabBarItem(title: "Replace", image: nil, tag: 100)
+        tabBar.items = items
+        expectedCount += 1
+        await Task.yield()
+        #expect(recorder.events.count == expectedCount)
+    }
+
+    tabBar.items?.insert(UITabBarItem(title: "Insert", image: nil, tag: 101), at: 1)
     expectedCount += 1
     await Task.yield()
     #expect(recorder.events.count == expectedCount)
 
-    context.controller.tabs.insert(makeTab(identifier: "insert"), at: 1)
-    expectedCount += 1
-    await Task.yield()
-    #expect(recorder.events.count == expectedCount)
-
-    _ = context.controller.tabs.removeLast()
+    _ = tabBar.items?.removeLast()
     expectedCount += 1
     await Task.yield()
     #expect(recorder.events.count == expectedCount)

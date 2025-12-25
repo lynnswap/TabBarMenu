@@ -51,11 +51,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         let tabBar = tabBarController.tabBar
 
         let buttons = tabBarButtonViews(in: tabBar)
-            .sorted { left, right in
-                let leftFrame = left.convert(left.bounds, to: tabBar)
-                let rightFrame = right.convert(right.bounds, to: tabBar)
-                return leftFrame.minX < rightFrame.minX
-            }
 
         removeLongPressGestures(from: tabBar)
         let tabs = tabBarController.tabs
@@ -69,7 +64,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard let tabBarController = tabBarController, cancellables.isEmpty else {
             return
         }
-        tabBarController.tabsDidChangePublisher
+        tabBarController.tabBar.itemsDidChangePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
