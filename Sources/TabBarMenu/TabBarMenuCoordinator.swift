@@ -171,8 +171,14 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             in: containerView,
             menuHostButton: hostButton
         )
+        let defaultPlacement: TabBarMenuAnchorPlacement = {
+            if #available(iOS 26.0, *) {
+                return .inside
+            }
+            return .above()
+        }()
         let anchorPoint: CGPoint?
-        switch placement ?? .inside {
+        switch placement ?? defaultPlacement {
         case .inside:
             anchorPoint = CGPoint(x: tabFrame.midX, y: ( tabFrame.maxY + tabFrame.midY) * 0.5 )
         case .above(let offset):
