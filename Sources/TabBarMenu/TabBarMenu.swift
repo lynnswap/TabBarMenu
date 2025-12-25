@@ -8,11 +8,18 @@ import ObjectiveC
 
 /// Defines where the menu anchor should be placed within the container view.
 public enum TabBarMenuAnchorPlacement: Equatable {
+    /// Default offset for `above(offset:)` when omitted.
+    public static var defaultAboveOffset: CGFloat {
+        if #available(iOS 26.0, *) {
+            return 8
+        }
+        return -12
+    }
     /// Uses the default anchor point inside the tab bar.
     case inside
     /// Places the anchor above the tab bar, offset from the tab's top edge.
-    /// Defaults to 8 when omitted.
-    case above(offset: CGFloat = 8)
+    /// Defaults to `defaultAboveOffset` when omitted.
+    case above(offset: CGFloat = TabBarMenuAnchorPlacement.defaultAboveOffset)
     /// Uses a custom point in the container view's coordinate space.
     case custom(CGPoint)
     /// Delegate handles `menuHostButton` positioning manually.
