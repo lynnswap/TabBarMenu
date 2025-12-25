@@ -46,6 +46,27 @@ final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
 
 `tab` is `nil` for the system More tab. Return `nil` to disable the menu for a given tab. Set `menuDelegate = nil` to remove menu handling.
 
+If you configure the tab bar controller with `viewControllers`, conform to `TabBarMenuViewControllerDelegate` instead. `viewController` is `nil` for the system More tab.
+TabBarMenu chooses the menu source based on which delegate protocol you adopt.
+
+```swift
+final class MainTabBarController: UITabBarController, TabBarMenuViewControllerDelegate {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        menuDelegate = self
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
+        guard let viewController else { return nil }
+        let tabBarItem = viewController.tabBarItem
+        let rename = UIAction(title: "Rename") { _ in
+            // Handle rename
+        }
+        return UIMenu(title: tabBarItem.title ?? "", children: [rename])
+    }
+}
+```
+
 ## Configuration
 
 Customize menu behavior via `menuConfiguration` (default minimum press duration is 0.35 seconds).

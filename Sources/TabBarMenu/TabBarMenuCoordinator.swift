@@ -3,7 +3,16 @@ import Combine
 
 @MainActor
 final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
-    weak var delegate: TabBarMenuDelegate?
+    private enum MenuSource {
+        case tabs
+        case viewControllers
+    }
+
+    weak var delegate: TabBarMenuDelegate? {
+        didSet {
+            menuSource = delegate is TabBarMenuViewControllerDelegate ? .viewControllers : .tabs
+        }
+    }
     var configuration: TabBarMenuConfiguration = .init() {
         didSet {
             guard oldValue != configuration else { return }
@@ -12,6 +21,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
     private weak var tabBarController: UITabBarController?
     private var menuHostButton: UIButton?
+    private var menuSource: MenuSource = .tabs
     private var cancellables = Set<AnyCancellable>()
 
     @MainActor deinit {
@@ -95,6 +105,45 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
 
     private func presentMenu(from button: UIButton) {
         button.performPrimaryAction()
+    }
+
+    private func presentMenu(
+        _ menu: UIMenu,
+        tabFrame: CGRect,
+        in containerView: UIView,
+        placement: TabBarMenuAnchorPlacement?,
+        hostButton: UIButton,
+        sourceView: UIView
+    ) {
+        let defaultPlacement: TabBarMenuAnchorPlacement = {
+            if #available(iOS 26.0, *) {
+                return .inside
+            }
+            return .above()
+        }()
+        let anchorPoint: CGPoint?
+        switch placement ?? defaultPlacement {
+        case .inside:
+            anchorPoint = CGPoint(x: tabFrame.midX, y: ( tabFrame.maxY + tabFrame.midY) * 0.5 )
+        case .above(let offset):
+            anchorPoint = CGPoint(x: tabFrame.midX, y: tabFrame.minY - offset)
+        case .custom(let point):
+            anchorPoint = point
+        case .manual:
+            anchorPoint = nil
+        }
+        if let anchorPoint {
+            let anchorSize: CGFloat = 2
+            hostButton.frame = CGRect(
+                x: anchorPoint.x - anchorSize / 2,
+                y: anchorPoint.y - anchorSize / 2,
+                width: anchorSize,
+                height: anchorSize
+            )
+        }
+        hostButton.menu = menu
+        presentMenu(from: hostButton)
+        cancelTabBarTracking(for: sourceView)
     }
 
     private func cancelTabBarTracking(for view: UIView?) {
@@ -182,6 +231,22 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return tabs[index]
     }
 
+    private func viewControllerForMenu(at index: Int, in tabBarController: UITabBarController) -> UIViewController? {
+        guard let viewControllers = tabBarController.viewControllers, !viewControllers.isEmpty else {
+            return nil
+        }
+        let maxVisibleCount = max(configuration.maxVisibleTabCount, 0)
+        if maxVisibleCount > 0,
+           viewControllers.count > maxVisibleCount,
+           index == maxVisibleCount - 1 {
+            return nil
+        }
+        guard viewControllers.indices.contains(index) else {
+            return nil
+        }
+        return viewControllers[index]
+    }
+
     @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
         guard recognizer.state == .began,
               let view = recognizer.view,
@@ -190,51 +255,59 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return
         }
         let index = longPressRecognizer.tabIndex
-        let tab = tabForMenu(at: index, in: tabBarController)
-        let menu = delegate?.tabBarController(tabBarController, tab: tab)
-        guard let tab,
-              let menu,
-              let containerView = tabBarController.view ?? view.window?.rootViewController?.view else {
+        guard let containerView = tabBarController.view ?? view.window?.rootViewController?.view else {
             return
         }
-        let hostButton = makeMenuHostButton(in: containerView)
         let tabFrame = view.convert(view.bounds, to: containerView)
-        let placement = delegate?.tabBarController(
-            tabBarController,
-            configureMenuPresentationFor: tab,
-            tabFrame: tabFrame,
-            in: containerView,
-            menuHostButton: hostButton
-        )
-        let defaultPlacement: TabBarMenuAnchorPlacement = {
-            if #available(iOS 26.0, *) {
-                return .inside
+        switch menuSource {
+        case .tabs:
+            let tab = tabForMenu(at: index, in: tabBarController)
+            let menu = delegate?.tabBarController(tabBarController, tab: tab)
+            guard let tab, let menu else {
+                return
             }
-            return .above()
-        }()
-        let anchorPoint: CGPoint?
-        switch placement ?? defaultPlacement {
-        case .inside:
-            anchorPoint = CGPoint(x: tabFrame.midX, y: ( tabFrame.maxY + tabFrame.midY) * 0.5 )
-        case .above(let offset):
-            anchorPoint = CGPoint(x: tabFrame.midX, y: tabFrame.minY - offset)
-        case .custom(let point):
-            anchorPoint = point
-        case .manual:
-            anchorPoint = nil
-        }
-        if let anchorPoint {
-            let anchorSize: CGFloat = 2
-            hostButton.frame = CGRect(
-                x: anchorPoint.x - anchorSize / 2,
-                y: anchorPoint.y - anchorSize / 2,
-                width: anchorSize,
-                height: anchorSize
+            let hostButton = makeMenuHostButton(in: containerView)
+            let placement = delegate?.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: tab,
+                tabFrame: tabFrame,
+                in: containerView,
+                menuHostButton: hostButton
+            )
+            presentMenu(
+                menu,
+                tabFrame: tabFrame,
+                in: containerView,
+                placement: placement,
+                hostButton: hostButton,
+                sourceView: view
+            )
+        case .viewControllers:
+            guard let viewControllerDelegate = delegate as? TabBarMenuViewControllerDelegate else {
+                return
+            }
+            let viewController = viewControllerForMenu(at: index, in: tabBarController)
+            let menu = viewControllerDelegate.tabBarController(tabBarController, viewController: viewController)
+            guard let viewController, let menu else {
+                return
+            }
+            let hostButton = makeMenuHostButton(in: containerView)
+            let placement = viewControllerDelegate.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: viewController,
+                tabFrame: tabFrame,
+                in: containerView,
+                menuHostButton: hostButton
+            )
+            presentMenu(
+                menu,
+                tabFrame: tabFrame,
+                in: containerView,
+                placement: placement,
+                hostButton: hostButton,
+                sourceView: view
             )
         }
-        hostButton.menu = menu
-        presentMenu(from: hostButton)
-        cancelTabBarTracking(for: view)
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
