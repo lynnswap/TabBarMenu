@@ -86,7 +86,10 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
 
     func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool) {}
 
-    func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu? {
+    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
+        guard let tab else {
+            return nil
+        }
         let rename = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in }
         let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
             self?.viewModel?.deleteTab(tab)

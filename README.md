@@ -31,27 +31,30 @@ final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
         menuDelegate = self
     }
 
-    func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu? {
+    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
+        guard let tab else { return nil }
         let rename = UIAction(title: "Rename") { _ in
             // Handle rename
         }
         let delete = UIAction(title: "Delete", attributes: .destructive) { _ in
             // Handle delete
         }
-        return UIMenu(title: "", children: [rename, delete])
+        return UIMenu(title: tab.title, children: [rename, delete])
     }
 }
 ```
 
-Return `nil` to disable the menu for a given tab. Set `menuDelegate = nil` to remove menu handling.
+`tab` is `nil` for the system More tab. Return `nil` to disable the menu for a given tab. Set `menuDelegate = nil` to remove menu handling.
 
 ## Configuration
 
 Customize menu behavior via `menuConfiguration` (default minimum press duration is 0.35 seconds).
+Set `maxVisibleTabCount` to the number of tabs shown before the system displays the More tab (default 5).
 
 ```swift
 tabBarController.updateMenuConfiguration { configuration in
     configuration.minimumPressDuration = 0.5
+    configuration.maxVisibleTabCount = 5
 }
 ```
 

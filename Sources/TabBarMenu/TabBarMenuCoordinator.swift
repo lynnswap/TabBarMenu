@@ -168,6 +168,20 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return button
     }
 
+    private func tabForMenu(at index: Int, in tabBarController: UITabBarController) -> UITab? {
+        let tabs = tabBarController.tabs
+        let maxVisibleCount = max(configuration.maxVisibleTabCount, 0)
+        if maxVisibleCount > 0,
+           tabs.count > maxVisibleCount,
+           index == maxVisibleCount - 1 {
+            return nil
+        }
+        guard tabs.indices.contains(index) else {
+            return nil
+        }
+        return tabs[index]
+    }
+
     @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
         guard recognizer.state == .began,
               let view = recognizer.view,
@@ -176,12 +190,10 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return
         }
         let index = longPressRecognizer.tabIndex
-        let tabs = tabBarController.tabs
-        guard tabs.indices.contains(index) else {
-            return
-        }
-        let tab = tabs[index]
-        guard let menu = delegate?.tabBarController(tabBarController, tab: tab),
+        let tab = tabForMenu(at: index, in: tabBarController)
+        let menu = delegate?.tabBarController(tabBarController, tab: tab)
+        guard let tab,
+              let menu,
               let containerView = tabBarController.view ?? view.window?.rootViewController?.view else {
             return
         }

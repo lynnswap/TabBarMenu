@@ -5,22 +5,22 @@ import Combine
 
 @MainActor
 private final class TestMenuDelegate: TabBarMenuDelegate {
-    private(set) var requestedIdentifiers: [String] = []
+    private(set) var requestedIdentifiers: [String?] = []
     private let menu: UIMenu
 
     init(menu: UIMenu = UIMenu(children: [])) {
         self.menu = menu
     }
 
-    func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu? {
-        requestedIdentifiers.append(tab.identifier)
+    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
+        requestedIdentifiers.append(tab?.identifier)
         return menu
     }
 }
 
 @MainActor
 private final class SelfDelegatingTabBarController: UITabBarController, TabBarMenuDelegate {
-    func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu? {
+    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
         UIMenu(children: [])
     }
 }

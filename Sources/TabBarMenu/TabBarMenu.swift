@@ -30,9 +30,13 @@ public enum TabBarMenuAnchorPlacement: Equatable {
 public struct TabBarMenuConfiguration: Equatable {
     /// The minimum press duration required to trigger the menu.
     public var minimumPressDuration: TimeInterval
+    /// The maximum number of visible tabs before the system shows the More tab. Defaults to 5.
+    /// When the total tab count exceeds this value, the trailing visible item is treated as the More tab.
+    public var maxVisibleTabCount: Int
 
-    public init(minimumPressDuration: TimeInterval = 0.35) {
+    public init(minimumPressDuration: TimeInterval = 0.35, maxVisibleTabCount: Int = 5) {
         self.minimumPressDuration = minimumPressDuration
+        self.maxVisibleTabCount = maxVisibleTabCount
     }
 }
 
@@ -43,9 +47,10 @@ public protocol TabBarMenuDelegate: AnyObject {
     /// Asks the delegate for the menu to present for the specified tab.
     /// - Parameters:
     ///   - tabBarController: The tab bar controller requesting the menu.
-    ///   - tab: The tab associated with the long-pressed item.
+    ///   - tab: The tab associated with the long-pressed item, or `nil` for the system More tab.
     /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
-    func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu?
+    ///            Menus are not presented when `tab` is `nil`.
+    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu?
 
     /// Asks the delegate to configure menu presentation and anchor placement.
     /// - Parameters:
