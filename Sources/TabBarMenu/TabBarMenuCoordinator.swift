@@ -166,7 +166,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         let tabFrame = view.convert(view.bounds, to: containerView)
         let placement = delegate?.tabBarController(
             tabBarController,
-            anchorPlacementFor: tab,
+            configureMenuPresentationFor: tab,
             tabFrame: tabFrame,
             in: containerView,
             menuHostButton: hostButton
