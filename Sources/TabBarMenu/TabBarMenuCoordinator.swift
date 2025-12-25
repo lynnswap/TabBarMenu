@@ -133,7 +133,12 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
                 return indexedViews
             }
         }
-        return tabBarControls(in: tabBar).enumerated().map { (index, view) in
+        let sortedControls = tabBarControls(in: tabBar).sorted { left, right in
+            let leftFrame = left.convert(left.bounds, to: tabBar)
+            let rightFrame = right.convert(right.bounds, to: tabBar)
+            return leftFrame.minX < rightFrame.minX
+        }
+        return sortedControls.enumerated().map { (index, view) in
             (index, view)
         }
     }
