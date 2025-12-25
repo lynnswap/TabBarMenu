@@ -39,17 +39,18 @@ public protocol TabBarMenuDelegate: AnyObject {
     /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
     func tabBarController(_ tabBarController: UITabBarController, tab: UITab) -> UIMenu?
 
-    /// Asks the delegate for the anchor placement for the menu.
+    /// Asks the delegate to configure menu presentation and anchor placement.
     /// - Parameters:
     ///   - tabBarController: The tab bar controller requesting the anchor placement.
     ///   - tab: The tab associated with the long-pressed item.
     ///   - tabFrame: The tab bar item frame in `containerView` coordinates.
     ///   - containerView: The view hosting the menu.
-    ///   - menuHostButton: The internal button used to present the menu.
+    ///   - menuHostButton: The internal button used to present the menu. Configure properties like
+    ///     `preferredMenuElementOrder` here.
     /// - Returns: The placement to use, or `nil` to use the default placement.
     func tabBarController(
         _ tabBarController: UITabBarController,
-        anchorPlacementFor tab: UITab,
+        configureMenuPresentationFor tab: UITab,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton
@@ -60,7 +61,7 @@ public protocol TabBarMenuDelegate: AnyObject {
 public extension TabBarMenuDelegate {
     func tabBarController(
         _ tabBarController: UITabBarController,
-        anchorPlacementFor tab: UITab,
+        configureMenuPresentationFor tab: UITab,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton
@@ -191,12 +192,13 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
     }
     func tabBarController(
         _ tabBarController: UITabBarController,
-        anchorPlacementFor tab: UITab,
+        configureMenuPresentationFor tab: UITab,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton
     ) -> TabBarMenuAnchorPlacement?{
-        .inside
+        menuHostButton.preferredMenuElementOrder = .fixed
+        return .inside
     }
     private func makeTab(title: String, systemImageName: String, identifier: String) -> UITab {
         UITab(title: title, image: UIImage(systemName: systemImageName), identifier: identifier) { _ in

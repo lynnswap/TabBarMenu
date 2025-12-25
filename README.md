@@ -55,16 +55,18 @@ tabBarController.updateMenuConfiguration { configuration in
 }
 ```
 
-## Anchor placement
+## Menu presentation
 
-To customize the menu anchor point, implement the optional delegate method that returns
-`TabBarMenuAnchorPlacement`. Return `nil` to keep the default placement (inside the tab bar).
+To customize the menu anchor point and configure the menu host button, implement the optional
+delegate method that returns `TabBarMenuAnchorPlacement`. Return `nil` to keep the default
+placement (inside the tab bar). You can also set `menuHostButton.preferredMenuElementOrder`
+here if needed.
 
 ```swift
 final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
     func tabBarController(
         _ tabBarController: UITabBarController,
-        anchorPlacementFor tab: UITab,
+        configureMenuPresentationFor tab: UITab,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton
@@ -79,7 +81,7 @@ final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
 - `.inside`: uses the default anchor point inside the tab bar.
 - `.above(offset:)`: places the anchor above the tab bar. The default offset is 8.
 - `.custom(CGPoint)`: uses a custom point in the container view's coordinate space.
-- `.manual`: delegate sets `menuHostButton.frame` manually in `anchorPlacementFor`.
+- `.manual`: delegate sets `menuHostButton.frame` manually in `configureMenuPresentationFor`.
 
 | Inside placement | Above placement |
 | --- | --- |
