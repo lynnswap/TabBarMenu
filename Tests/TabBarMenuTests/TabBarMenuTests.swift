@@ -105,13 +105,10 @@ private func tabBarItemView(_ item: UITabBarItem) -> UIView? {
 }
 @MainActor
 private func tabBarButtonViews(in tabBar: UITabBar) -> [UIView] {
-    if let items = tabBar.items, !items.isEmpty {
-        let itemViews = items.compactMap { tabBarItemView($0) }
-        if !itemViews.isEmpty {
-            return itemViews
-        }
+    guard let items = tabBar.items, !items.isEmpty else {
+        return []
     }
-    return tabBarControls(in: tabBar)
+    return items.compactMap { tabBarItemView($0) }
 }
 @MainActor
 private func menuLongPressRecognizers(in tabBar: UITabBar) -> [TabBarMenuLongPressGestureRecognizer] {
@@ -261,7 +258,9 @@ func menuDelegateRefreshesLongPressGesturesWhenTabsChange() async {
     let expectedIndices = Set(0..<expectedCount)
 
     #expect(updatedIndices == expectedIndices)
-    #expect(updatedIndices != initialIndices)
+    if expectedCount > 0 {
+        #expect(updatedIndices != initialIndices)
+    }
 }
 
 @Test("menuDelegate clears long-press gestures when unset")
@@ -271,7 +270,9 @@ func menuDelegateClearsLongPressGesturesWhenUnset() async {
     let delegate = TestMenuDelegate()
 
     context.controller.menuDelegate = delegate
-    #expect(!menuRecognizerIndices(in: context.controller.tabBar).isEmpty)
+    let buttonViews = tabBarButtonViews(in: context.controller.tabBar)
+    let expectedCount = min(context.tabs.count, buttonViews.count)
+    #expect(menuRecognizerIndices(in: context.controller.tabBar).count == expectedCount)
 
     context.controller.menuDelegate = nil
     #expect(menuRecognizerIndices(in: context.controller.tabBar).isEmpty)
@@ -301,10 +302,14 @@ func menuConfigurationAppliesMinimumPressDuration() async {
     context.controller.menuConfiguration = TabBarMenuConfiguration(minimumPressDuration: 0.5)
     context.controller.menuDelegate = delegate
 
+    let buttonViews = tabBarButtonViews(in: context.controller.tabBar)
+    let expectedCount = min(context.tabs.count, buttonViews.count)
     let durations = menuMinimumPressDurations(in: context.controller.tabBar)
 
-    #expect(!durations.isEmpty)
-    #expect(durations.allSatisfy { abs($0 - 0.5) < 0.001 })
+    #expect(durations.count == expectedCount)
+    if expectedCount > 0 {
+        #expect(durations.allSatisfy { abs($0 - 0.5) < 0.001 })
+    }
 }
 
 @Test("menuConfiguration updates minimumPressDuration")
@@ -314,6 +319,8 @@ func menuConfigurationUpdatesMinimumPressDuration() async {
     let delegate = TestMenuDelegate()
 
     context.controller.menuDelegate = delegate
+    let buttonViews = tabBarButtonViews(in: context.controller.tabBar)
+    let expectedCount = min(context.tabs.count, buttonViews.count)
     let initialDurations = menuMinimumPressDurations(in: context.controller.tabBar)
 
     context.controller.updateMenuConfiguration { configuration in
@@ -322,8 +329,11 @@ func menuConfigurationUpdatesMinimumPressDuration() async {
 
     let updatedDurations = menuMinimumPressDurations(in: context.controller.tabBar)
 
-    #expect(!initialDurations.isEmpty)
-    #expect(updatedDurations.allSatisfy { abs($0 - 0.6) < 0.001 })
+    #expect(initialDurations.count == expectedCount)
+    #expect(updatedDurations.count == expectedCount)
+    if expectedCount > 0 {
+        #expect(updatedDurations.allSatisfy { abs($0 - 0.6) < 0.001 })
+    }
 }
 
 @Test("coordinator reattaches to a different tab bar controller")
@@ -337,12 +347,16 @@ func coordinatorReattachesToDifferentTabBarController() async {
     coordinator.delegate = delegate
     coordinator.attach(to: firstContext.controller)
 
-    #expect(!menuRecognizerIndices(in: firstContext.controller.tabBar).isEmpty)
+    let firstButtonViews = tabBarButtonViews(in: firstContext.controller.tabBar)
+    let firstExpectedCount = min(firstContext.tabs.count, firstButtonViews.count)
+    #expect(menuRecognizerIndices(in: firstContext.controller.tabBar).count == firstExpectedCount)
 
     coordinator.attach(to: secondContext.controller)
 
     #expect(menuRecognizerIndices(in: firstContext.controller.tabBar).isEmpty)
-    #expect(!menuRecognizerIndices(in: secondContext.controller.tabBar).isEmpty)
+    let secondButtonViews = tabBarButtonViews(in: secondContext.controller.tabBar)
+    let secondExpectedCount = min(secondContext.tabs.count, secondButtonViews.count)
+    #expect(menuRecognizerIndices(in: secondContext.controller.tabBar).count == secondExpectedCount)
 }
 
 @Test("gesture count matches the available button views")

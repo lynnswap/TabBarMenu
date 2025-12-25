@@ -125,21 +125,11 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     private func tabBarIndexedViews(in tabBar: UITabBar) -> [(Int, UIView)] {
-        if let items = tabBar.items, !items.isEmpty {
-            let indexedViews = items.enumerated().compactMap { index, item in
-                tabBarItemView(item).map { (index, $0) }
-            }
-            if !indexedViews.isEmpty {
-                return indexedViews
-            }
+        guard let items = tabBar.items, !items.isEmpty else {
+            return []
         }
-        let sortedControls = tabBarControls(in: tabBar).sorted { left, right in
-            let leftFrame = left.convert(left.bounds, to: tabBar)
-            let rightFrame = right.convert(right.bounds, to: tabBar)
-            return leftFrame.minX < rightFrame.minX
-        }
-        return sortedControls.enumerated().map { (index, view) in
-            (index, view)
+        return items.enumerated().compactMap { index, item in
+            tabBarItemView(item).map { (index, $0) }
         }
     }
 
