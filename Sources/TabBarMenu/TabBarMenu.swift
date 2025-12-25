@@ -40,10 +40,11 @@ public struct TabBarMenuConfiguration: Equatable {
     }
 }
 
-@MainActor
 /// A delegate that provides contextual menus for tabs in a `UITabBarController`.
 /// - Important: Return `nil` to disable the menu for a given tab.
-public protocol TabBarMenuDelegate: AnyObject {
+/// - Note: If you configure the tab bar controller with `viewControllers`, use
+///   `TabBarMenuViewControllerDelegate` instead.
+@MainActor public protocol TabBarMenuDelegate: AnyObject {
     /// Asks the delegate for the menu to present for the specified tab.
     /// - Parameters:
     ///   - tabBarController: The tab bar controller requesting the menu.
@@ -79,6 +80,56 @@ public extension TabBarMenuDelegate {
         in containerView: UIView,
         menuHostButton: UIButton
     ) -> TabBarMenuAnchorPlacement? {
+        nil
+    }
+}
+
+/// A delegate that provides contextual menus for view controllers in a `UITabBarController`.
+/// - Important: Return `nil` to disable the menu for a given view controller.
+@MainActor public protocol TabBarMenuViewControllerDelegate: TabBarMenuDelegate {
+    /// Asks the delegate for the menu to present for the specified view controller.
+    /// - Parameters:
+    ///   - tabBarController: The tab bar controller requesting the menu.
+    ///   - viewController: The view controller associated with the long-pressed item,
+    ///     or `nil` for the system More tab.
+    /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
+    ///            Menus are not presented when `viewController` is `nil`.
+    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu?
+
+    /// Asks the delegate to configure menu presentation and anchor placement.
+    /// - Parameters:
+    ///   - tabBarController: The tab bar controller requesting the anchor placement.
+    ///   - viewController: The view controller associated with the long-pressed item.
+    ///   - tabFrame: The tab bar item frame in `containerView` coordinates.
+    ///   - containerView: The view hosting the menu.
+    ///   - menuHostButton: The internal button used to present the menu. Configure properties like
+    ///     `preferredMenuElementOrder` here.
+    /// - Returns: The placement to use, or `nil` to use the default placement.
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        configureMenuPresentationFor viewController: UIViewController,
+        tabFrame: CGRect,
+        in containerView: UIView,
+        menuHostButton: UIButton
+    ) -> TabBarMenuAnchorPlacement?
+}
+
+@MainActor
+public extension TabBarMenuViewControllerDelegate {
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        configureMenuPresentationFor viewController: UIViewController,
+        tabFrame: CGRect,
+        in containerView: UIView,
+        menuHostButton: UIButton
+    ) -> TabBarMenuAnchorPlacement? {
+        nil
+    }
+}
+
+@MainActor
+public extension TabBarMenuDelegate where Self: TabBarMenuViewControllerDelegate {
+    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
         nil
     }
 }

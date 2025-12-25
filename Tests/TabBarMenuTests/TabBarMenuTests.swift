@@ -19,6 +19,21 @@ private final class TestMenuDelegate: TabBarMenuDelegate {
 }
 
 @MainActor
+private final class ViewControllerMenuDelegate: TabBarMenuViewControllerDelegate {
+    private(set) var requestedTitles: [String?] = []
+    private let menu: UIMenu
+
+    init(menu: UIMenu = UIMenu(children: [])) {
+        self.menu = menu
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
+        requestedTitles.append(viewController?.title)
+        return menu
+    }
+}
+
+@MainActor
 private final class SelfDelegatingTabBarController: UITabBarController, TabBarMenuDelegate {
     func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
         UIMenu(children: [])
@@ -74,6 +89,16 @@ private func makeTabs(count: Int) -> [UITab] {
 private func makeTabBarItems(count: Int) -> [UITabBarItem] {
     (0..<count).map { index in
         UITabBarItem(title: "Item \(index)", image: nil, tag: index)
+    }
+}
+
+@MainActor
+private func makeViewControllers(count: Int) -> [UIViewController] {
+    (0..<count).map { index in
+        let controller = UIViewController()
+        controller.title = "View \(index)"
+        controller.tabBarItem = UITabBarItem(title: "Item \(index)", image: nil, tag: index)
+        return controller
     }
 }
 
@@ -231,6 +256,28 @@ func menuDelegateAttachesLongPressGestures() async {
     #expect(indices.count == expectedCount)
     #expect(indices == expectedIndices)
     #expect(context.host.window.rootViewController === context.controller)
+}
+
+@Test("menuDelegate attaches long-press gestures for viewControllers")
+@MainActor
+func menuDelegateAttachesLongPressGesturesForViewControllers() async {
+    let controller = UITabBarController()
+    let viewControllers = makeViewControllers(count: 3)
+    controller.setViewControllers(viewControllers, animated: false)
+    let host = WindowHost(rootViewController: controller)
+    let delegate = ViewControllerMenuDelegate()
+
+    controller.menuDelegate = delegate
+
+    #expect(controller.menuDelegate === delegate)
+    let indices = menuRecognizerIndices(in: controller.tabBar)
+    let buttonViews = tabBarButtonViews(in: controller.tabBar)
+    let expectedCount = min(viewControllers.count, buttonViews.count)
+    let expectedIndices = Set(0..<expectedCount)
+
+    #expect(indices.count == expectedCount)
+    #expect(indices == expectedIndices)
+    #expect(host.window.rootViewController === controller)
 }
 
 @Test("menuDelegate supports self assignment")

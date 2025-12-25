@@ -65,6 +65,17 @@ private final class TabBarMenuPreviewViewModel {
         }
     }
 
+    func deleteTab(_ viewController: UIViewController) {
+        let identifier = viewController.restorationIdentifier ?? ""
+        let title = viewController.title ?? viewController.tabBarItem.title ?? ""
+        tabs.removeAll { previewTab in
+            if !identifier.isEmpty, previewTab.identifier == identifier {
+                return true
+            }
+            return !title.isEmpty && previewTab.title == title
+        }
+    }
+
     private func applyTabs() {
         previewController?.applyPreviewTabs(tabs, showsSearchTab: isSearchTabEnabled)
     }
@@ -90,12 +101,11 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
         guard let tab else {
             return nil
         }
-        let rename = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in }
-        let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+        return makeMenu(title: tab.title) { [weak self] in
             self?.viewModel?.deleteTab(tab)
         }
-        return UIMenu(title: tab.title, children: [rename, delete])
     }
+
     func tabBarController(
         _ tabBarController: UITabBarController,
         configureMenuPresentationFor tab: UITab,
@@ -106,7 +116,14 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
         menuHostButton.preferredMenuElementOrder = .fixed
         return nil
     }
-    
+
+    fileprivate func makeMenu(title: String, deleteHandler: @escaping () -> Void) -> UIMenu {
+        let rename = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in }
+        let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
+            deleteHandler()
+        }
+        return UIMenu(title: title, children: [rename, delete])
+    }
 }
 
 private final class TabBarMenuPreviewTabsController: TabBarMenuPreviewBaseController {
@@ -142,8 +159,29 @@ private final class TabBarMenuPreviewTabsController: TabBarMenuPreviewBaseContro
     }
 }
 
-private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseController {
+private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseController, TabBarMenuViewControllerDelegate {
     private var hasAppliedTabs = false
+
+    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
+        guard let viewController else {
+            return nil
+        }
+        let title = viewController.title ?? viewController.tabBarItem.title ?? ""
+        return makeMenu(title: title) { [weak self] in
+            self?.viewModel?.deleteTab(viewController)
+        }
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        configureMenuPresentationFor viewController: UIViewController,
+        tabFrame: CGRect,
+        in containerView: UIView,
+        menuHostButton: UIButton
+    ) -> TabBarMenuAnchorPlacement? {
+        menuHostButton.preferredMenuElementOrder = .fixed
+        return nil
+    }
 
     override func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool) {
         var updatedViewControllers = previewTabs.map { makeTab($0) }
@@ -159,6 +197,7 @@ private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseContr
             rootView: SampleTabView(title: tab.title, systemImage: tab.systemImageName)
         )
         controller.title = tab.title
+        controller.restorationIdentifier = tab.identifier
         controller.tabBarItem = UITabBarItem(
             title: tab.title,
             image: UIImage(systemName: tab.systemImageName),
