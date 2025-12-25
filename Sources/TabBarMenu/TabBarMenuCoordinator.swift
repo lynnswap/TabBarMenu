@@ -69,10 +69,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard let tabBarController = tabBarController, cancellables.isEmpty else {
             return
         }
-        tabBarController.publisher(for: \.tabs)
-            .removeDuplicates(by: { left, right in
-                left.map(\.identifier) == right.map(\.identifier)
-            })
+        tabBarController.tabsDidChangePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
