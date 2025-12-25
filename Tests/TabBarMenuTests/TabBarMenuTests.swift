@@ -108,7 +108,31 @@ private func tabBarButtonViews(in tabBar: UITabBar) -> [UIView] {
     guard let items = tabBar.items, !items.isEmpty else {
         return []
     }
-    return items.compactMap { tabBarItemView($0) }
+    let itemViews = items.compactMap { tabBarItemView($0) }
+    if itemViews.count == items.count {
+        return itemViews
+    }
+    let controls = tabBarFallbackControls(in: tabBar)
+    guard !controls.isEmpty else {
+        return itemViews
+    }
+    let sortedControls = controls.sorted { left, right in
+        let leftFrame = left.convert(left.bounds, to: tabBar)
+        let rightFrame = right.convert(right.bounds, to: tabBar)
+        return leftFrame.minX < rightFrame.minX
+    }
+    let count = min(sortedControls.count, items.count)
+    return Array(sortedControls.prefix(count))
+}
+
+@MainActor
+private func tabBarFallbackControls(in tabBar: UITabBar) -> [UIControl] {
+    let controls = tabBarControls(in: tabBar)
+    let topLevelControls = controls.filter { $0.superview === tabBar }
+    if !topLevelControls.isEmpty {
+        return topLevelControls
+    }
+    return controls
 }
 @MainActor
 private func menuLongPressRecognizers(in tabBar: UITabBar) -> [TabBarMenuLongPressGestureRecognizer] {

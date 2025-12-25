@@ -128,9 +128,34 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard let items = tabBar.items, !items.isEmpty else {
             return []
         }
-        return items.enumerated().compactMap { index, item in
+        let indexedViews = items.enumerated().compactMap { index, item in
             tabBarItemView(item).map { (index, $0) }
         }
+        if indexedViews.count == items.count {
+            return indexedViews
+        }
+        let controls = tabBarFallbackControls(in: tabBar)
+        guard !controls.isEmpty else {
+            return indexedViews
+        }
+        let sortedControls = controls.sorted { left, right in
+            let leftFrame = left.convert(left.bounds, to: tabBar)
+            let rightFrame = right.convert(right.bounds, to: tabBar)
+            return leftFrame.minX < rightFrame.minX
+        }
+        let count = min(sortedControls.count, items.count)
+        return sortedControls.prefix(count).enumerated().map { index, view in
+            (index, view)
+        }
+    }
+
+    private func tabBarFallbackControls(in tabBar: UITabBar) -> [UIControl] {
+        let controls = tabBarControls(in: tabBar)
+        let topLevelControls = controls.filter { $0.superview === tabBar }
+        if !topLevelControls.isEmpty {
+            return topLevelControls
+        }
+        return controls
     }
 
     private func makeMenuHostButton(in containerView: UIView) -> UIButton {
