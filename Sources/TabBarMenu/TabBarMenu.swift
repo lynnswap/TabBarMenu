@@ -26,16 +26,31 @@ public enum TabBarMenuAnchorPlacement: Equatable {
     case manual
 }
 
+/// Defines how the menu should be triggered for the system More tab.
+public enum TabBarMenuMoreTabTrigger: Equatable {
+    /// Uses a long-press to present the menu.
+    case longPress
+    /// Uses a tap to present the menu and suppresses the default More screen.
+    case tap
+}
+
 /// Configuration for TabBarMenu behaviors.
 public struct TabBarMenuConfiguration: Equatable {
     /// The minimum press duration required to trigger the menu.
     public var minimumPressDuration: TimeInterval
+    /// The trigger used to present the menu for the system More tab.
+    public var moreTabMenuTrigger: TabBarMenuMoreTabTrigger
     /// The maximum number of visible tabs before the system shows the More tab. Defaults to 5.
     /// When the total tab count exceeds this value, the trailing visible item is treated as the More tab.
     public var maxVisibleTabCount: Int
 
-    public init(minimumPressDuration: TimeInterval = 0.35, maxVisibleTabCount: Int = 5) {
+    public init(
+        minimumPressDuration: TimeInterval = 0.35,
+        moreTabMenuTrigger: TabBarMenuMoreTabTrigger = .longPress,
+        maxVisibleTabCount: Int = 5
+    ) {
         self.minimumPressDuration = minimumPressDuration
+        self.moreTabMenuTrigger = moreTabMenuTrigger
         self.maxVisibleTabCount = maxVisibleTabCount
     }
 }
@@ -48,10 +63,17 @@ public struct TabBarMenuConfiguration: Equatable {
     /// Asks the delegate for the menu to present for the specified tab.
     /// - Parameters:
     ///   - tabBarController: The tab bar controller requesting the menu.
-    ///   - tab: The tab associated with the long-pressed item, or `nil` for the system More tab.
+    ///   - tab: The tab associated with the long-pressed item.
+    /// - Note: Use `tabBarController(_:menuForMoreTabWith:)` to provide a menu for the system More tab.
     /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
-    ///            Menus are not presented when `tab` is `nil`.
     func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu?
+
+    /// Asks the delegate for the menu to present for the system More tab.
+    /// - Parameters:
+    ///   - tabBarController: The tab bar controller requesting the menu.
+    ///   - tabs: The tabs that would appear in the More list, in display order.
+    /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
+    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu?
 
     /// Asks the delegate to configure menu presentation and anchor placement.
     /// - Parameters:
@@ -82,6 +104,10 @@ public extension TabBarMenuDelegate {
     ) -> TabBarMenuAnchorPlacement? {
         nil
     }
+
+    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+        nil
+    }
 }
 
 /// A delegate that provides contextual menus for view controllers in a `UITabBarController`.
@@ -90,11 +116,20 @@ public extension TabBarMenuDelegate {
     /// Asks the delegate for the menu to present for the specified view controller.
     /// - Parameters:
     ///   - tabBarController: The tab bar controller requesting the menu.
-    ///   - viewController: The view controller associated with the long-pressed item,
-    ///     or `nil` for the system More tab.
+    ///   - viewController: The view controller associated with the long-pressed item.
+    /// - Note: Use `tabBarController(_:menuForMoreTabWith:)` to provide a menu for the system More tab.
     /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
-    ///            Menus are not presented when `viewController` is `nil`.
     func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu?
+
+    /// Asks the delegate for the menu to present for the system More tab.
+    /// - Parameters:
+    ///   - tabBarController: The tab bar controller requesting the menu.
+    ///   - viewControllers: The view controllers that would appear in the More list, in display order.
+    /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        menuForMoreTabWith viewControllers: [UIViewController]
+    ) -> UIMenu?
 
     /// Asks the delegate to configure menu presentation and anchor placement.
     /// - Parameters:
@@ -123,6 +158,13 @@ public extension TabBarMenuViewControllerDelegate {
         in containerView: UIView,
         menuHostButton: UIButton
     ) -> TabBarMenuAnchorPlacement? {
+        nil
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        menuForMoreTabWith viewControllers: [UIViewController]
+    ) -> UIMenu? {
         nil
     }
 }

@@ -81,6 +81,9 @@ private final class TabBarMenuPreviewViewModel {
     }
 
     private func configure(_ controller: TabBarMenuPreviewBaseController) {
+        controller.updateMenuConfiguration { configuration in
+            configuration.moreTabMenuTrigger = .tap
+        }
         controller.menuDelegate = controller
         controller.viewModel = self
     }
@@ -104,6 +107,22 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
         return makeMenu(title: tab.title) { [weak self] in
             self?.viewModel?.deleteTab(tab)
         }
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+        guard !tabs.isEmpty else {
+            return nil
+        }
+        let actions = tabs.map { tab in
+            let title = tab.title.isEmpty ? "Untitled" : tab.title
+            return UIAction(title: title, image: tab.image) { [weak tabBarController] _ in
+                guard let tabBarController else { return }
+                if let index = tabBarController.tabs.firstIndex(where: { $0 === tab }) {
+                    tabBarController.selectedIndex = index
+                }
+            }
+        }
+        return UIMenu(title: "More", children: actions)
     }
 
     func tabBarController(
@@ -170,6 +189,22 @@ private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseContr
         return makeMenu(title: title) { [weak self] in
             self?.viewModel?.deleteTab(viewController)
         }
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        menuForMoreTabWith viewControllers: [UIViewController]
+    ) -> UIMenu? {
+        guard !viewControllers.isEmpty else {
+            return nil
+        }
+        let actions = viewControllers.map { viewController in
+            let title = viewController.title ?? viewController.tabBarItem.title ?? "Untitled"
+            return UIAction(title: title, image: viewController.tabBarItem.image) { [weak tabBarController] _ in
+                tabBarController?.selectedViewController = viewController
+            }
+        }
+        return UIMenu(title: "More", children: actions)
     }
 
     func tabBarController(

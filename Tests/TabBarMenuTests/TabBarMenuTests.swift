@@ -176,6 +176,10 @@ private func menuRecognizerIndices(in tabBar: UITabBar) -> Set<Int> {
 private func menuMinimumPressDurations(in tabBar: UITabBar) -> [TimeInterval] {
     menuLongPressRecognizers(in: tabBar).map(\.minimumPressDuration)
 }
+@MainActor
+private func menuLongPressDurationsByIndex(in tabBar: UITabBar) -> [Int: TimeInterval] {
+    Dictionary(uniqueKeysWithValues: menuLongPressRecognizers(in: tabBar).map { ($0.tabIndex, $0.minimumPressDuration) })
+}
 
 @Test("itemsDidChangePublisher emits when items are assigned")
 @MainActor
@@ -405,6 +409,34 @@ func menuConfigurationUpdatesMinimumPressDuration() async {
     if expectedCount > 0 {
         #expect(updatedDurations.allSatisfy { abs($0 - 0.6) < 0.001 })
     }
+}
+
+@Test("menuConfiguration uses tap for the More tab when configured")
+@MainActor
+func menuConfigurationUsesTapForMoreTabWhenConfigured() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = TestMenuDelegate()
+
+    context.controller.updateMenuConfiguration { configuration in
+        configuration.moreTabMenuTrigger = .tap
+    }
+    context.controller.menuDelegate = delegate
+
+    let buttonViews = tabBarButtonViews(in: context.controller.tabBar)
+    let expectedCount = min(context.tabs.count, buttonViews.count)
+    let moreIndex = context.controller.menuConfiguration.maxVisibleTabCount - 1
+    let longPressIndices = menuRecognizerIndices(in: context.controller.tabBar)
+    let durationsByIndex = menuLongPressDurationsByIndex(in: context.controller.tabBar)
+
+    if expectedCount > moreIndex {
+        #expect(longPressIndices.contains(moreIndex))
+        if let duration = durationsByIndex[moreIndex] {
+            #expect(abs(duration - 0) < 0.001)
+        } else {
+            #expect(false)
+        }
+    }
+    #expect(longPressIndices.count == expectedCount)
 }
 
 @Test("coordinator reattaches to a different tab bar controller")
