@@ -177,6 +177,14 @@ public extension UITabBarController {
         menuConfiguration = configuration
     }
 
+    /// Updates the presented tab bar menu, if available.
+    /// - Parameter update: Receives the current menu (if any) and returns the new menu.
+    /// - Returns: `true` when a menu host button exists and the update was applied.
+    @discardableResult
+    func updateTabBarMenu(_ update: (UIMenu?) -> UIMenu?) -> Bool {
+        tabBarMenuCoordinator?.updateVisibleMenu(update) ?? false
+    }
+
     private var tabBarMenuCoordinator: TabBarMenuCoordinator? {
         get {
             objc_getAssociatedObject(self, &TabBarMenuAssociatedKeys.coordinator) as? TabBarMenuCoordinator
