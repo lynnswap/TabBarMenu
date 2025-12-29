@@ -74,6 +74,21 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
     }
 
+    @discardableResult
+    func updateVisibleMenu(_ update: (UIMenu?) -> UIMenu?) -> Bool {
+        guard let menuHostButton else {
+            return false
+        }
+        let updatedMenu = update(menuHostButton.menu)
+        menuHostButton.menu = updatedMenu
+        if let updatedMenu{
+            menuHostButton.contextMenuInteraction?.updateVisibleMenu { _ in
+                updatedMenu
+            }
+        }
+        return true
+    }
+
     private func startObservingTabs() {
         guard let tabBarController = tabBarController, cancellables.isEmpty else {
             return

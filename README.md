@@ -97,6 +97,20 @@ tabBarController.updateMenuConfiguration { configuration in
 }
 ```
 
+## Updating a visible menu
+
+To refresh the menu while it is visible, call `updateTabBarMenu(_:)` on the tab bar controller.
+The closure receives the current menu (if any) and must return the updated menu.
+The method returns `false` when there is no active menu host button.
+
+```swift
+tabBarController.updateTabBarMenu { currentMenu in
+    guard let currentMenu else { return currentMenu }
+    let refreshed = currentMenu.replacingChildren(currentMenu.children)
+    return refreshed
+}
+```
+
 ## Menu presentation
 
 To customize the menu anchor point and configure the menu host button, implement the optional
