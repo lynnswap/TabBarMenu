@@ -17,13 +17,6 @@ Add the package via Swift Package Manager in Xcode:
 2. Enter the repository URL
 3. Add the `TabBarMenu` product to your target
 
-## Demo app
-
-Open `Examples/TabBarDemo/TabBarDemo.xcodeproj` and run the `TabBarDemo` scheme on iOS 18+.
-The demo app depends on the `TabBarMenuDemoSupport` product (separate from the main library).
-To switch modes, edit `TabBarMenuPreviewScreen(mode: ...)` in
-`Examples/TabBarDemo/TabBarDemo/TabBarDemo.swift`.
-
 ## Usage
 
 Conform to `TabBarMenuDelegate` and set `menuDelegate` on your tab bar controller.
@@ -149,6 +142,10 @@ final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
 | Inside placement | Above placement |
 | --- | --- |
 | ![Inside placement example](Docs/images/anchor-inside.webp) | ![Above placement example](Docs/images/anchor-above.webp) |
+
+## Demo app
+
+Open `Examples/TabBarDemo/TabBarDemo.xcodeproj` and run the `TabBarDemo` scheme on iOS 18+.
 
 ## License
 
