@@ -1,7 +1,6 @@
 import SwiftUI
 import Observation
-
-#if DEBUG
+import TabBarMenu
 
 private struct PreviewTab: Equatable {
     let title: String
@@ -89,7 +88,7 @@ private final class TabBarMenuPreviewViewModel {
     }
 }
 
-private enum TabBarMenuPreviewMode {
+public enum TabBarMenuPreviewMode {
     case uiTab
     case uiTabBarItem
 }
@@ -250,7 +249,7 @@ private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseContr
         return controller
     }
 }
-struct SampleTabView: View {
+private struct SampleTabView: View {
     let title: String
     let systemImage: String
 
@@ -284,11 +283,15 @@ private struct TabBarMenuPreviewRepresentable: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: TabBarMenuPreviewBaseController, context: Context) {}
 }
 
-private struct TabBarMenuPreviewScreen: View {
+public struct TabBarMenuPreviewScreen: View {
     let mode: TabBarMenuPreviewMode
     @State private var viewModel = TabBarMenuPreviewViewModel()
 
-    var body: some View {
+    public init(mode: TabBarMenuPreviewMode) {
+        self.mode = mode
+    }
+
+    public var body: some View {
         NavigationStack {
             previewContent
                 .ignoresSafeArea()
@@ -311,6 +314,7 @@ private struct TabBarMenuPreviewScreen: View {
     }
 }
 
+#if DEBUG
 #Preview("TabBarMenu UITab") {
     TabBarMenuPreviewScreen(mode: .uiTab)
 }
@@ -318,5 +322,4 @@ private struct TabBarMenuPreviewScreen: View {
 #Preview("TabBarMenu UITabBarItem") {
     TabBarMenuPreviewScreen(mode: .uiTabBarItem)
 }
-
 #endif
