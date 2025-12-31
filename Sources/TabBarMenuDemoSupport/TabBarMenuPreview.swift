@@ -37,16 +37,37 @@ private final class TabBarMenuPreviewViewModel {
             applyTabs()
         }
     }
-    private weak var previewController: TabBarMenuPreviewBaseController?
+    private var previewController: TabBarMenuPreviewBaseController?
+    private weak var containerController: TabBarMenuPreviewContainerController?
+    private var currentMode: TabBarMenuPreviewMode?
 
     init(tabs: [PreviewTab] = PreviewTabDefaults.initialTabs) {
         self.tabs = tabs
     }
 
-    func register(_ controller: TabBarMenuPreviewBaseController) {
+    func register(_ container: TabBarMenuPreviewContainerController) {
+        containerController = container
+        if let previewController {
+            container.setContent(previewController)
+        }
+    }
+
+    func updateMode(_ mode: TabBarMenuPreviewMode) {
+        guard currentMode != mode || previewController == nil else {
+            return
+        }
+        currentMode = mode
+        let controller: TabBarMenuPreviewBaseController
+        switch mode {
+        case .uiTab:
+            controller = TabBarMenuPreviewTabsController()
+        case .uiTabBarItem:
+            controller = TabBarMenuPreviewItemsController()
+        }
         previewController = controller
         configure(controller)
         controller.applyPreviewTabs(tabs, showsSearchTab: isSearchTabEnabled)
+        containerController?.setContent(controller)
     }
 
     func addTab() {
@@ -88,7 +109,7 @@ private final class TabBarMenuPreviewViewModel {
     }
 }
 
-public enum TabBarMenuPreviewMode {
+public enum TabBarMenuPreviewMode: String {
     case uiTab
     case uiTabBarItem
 }
@@ -141,6 +162,28 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
             deleteHandler()
         }
         return UIMenu(title: title, children: [rename, delete])
+    }
+}
+
+@MainActor
+private final class TabBarMenuPreviewContainerController: UIViewController {
+    private var currentController: UIViewController?
+
+    func setContent(_ controller: UIViewController) {
+        guard currentController !== controller else {
+            return
+        }
+        if let currentController {
+            currentController.willMove(toParent: nil)
+            currentController.view.removeFromSuperview()
+            currentController.removeFromParent()
+        }
+        addChild(controller)
+        controller.view.frame = view.bounds
+        controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(controller.view)
+        controller.didMove(toParent: self)
+        currentController = controller
     }
 }
 
@@ -268,23 +311,18 @@ private struct TabBarMenuPreviewRepresentable: UIViewControllerRepresentable {
     let mode: TabBarMenuPreviewMode
     let viewModel: TabBarMenuPreviewViewModel
 
-    func makeUIViewController(context: Context) -> TabBarMenuPreviewBaseController {
-        let controller: TabBarMenuPreviewBaseController
-        switch mode {
-        case .uiTab:
-            controller = TabBarMenuPreviewTabsController()
-        case .uiTabBarItem:
-            controller = TabBarMenuPreviewItemsController()
-        }
-        viewModel.register(controller)
-        return controller
+    func makeUIViewController(context: Context) -> TabBarMenuPreviewContainerController {
+        let container = TabBarMenuPreviewContainerController()
+        viewModel.register(container)
+        viewModel.updateMode(mode)
+        return container
     }
 
-    func updateUIViewController(_ uiViewController: TabBarMenuPreviewBaseController, context: Context) {}
+    func updateUIViewController(_ uiViewController: TabBarMenuPreviewContainerController, context: Context) {}
 }
 
 public struct TabBarMenuPreviewScreen: View {
-    let mode: TabBarMenuPreviewMode
+    private var mode: TabBarMenuPreviewMode
     @State private var viewModel = TabBarMenuPreviewViewModel()
 
     public init(mode: TabBarMenuPreviewMode) {
@@ -292,34 +330,34 @@ public struct TabBarMenuPreviewScreen: View {
     }
 
     public var body: some View {
-        NavigationStack {
-            previewContent
-                .ignoresSafeArea()
-                .toolbar{
-                    ToolbarItem(placement: .navigation) {
-                        Toggle("Search Tab", isOn: Bindable(viewModel).isSearchTabEnabled)
-                    }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Add") {
-                            viewModel.addTab()
-                        }
+        TabBarMenuPreviewRepresentable(mode: mode, viewModel: viewModel)
+            .ignoresSafeArea()
+            .toolbar{
+                ToolbarItem(placement: .navigation) {
+                    Toggle("Search Tab", isOn: Bindable(viewModel).isSearchTabEnabled)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Add") {
+                        viewModel.addTab()
                     }
                 }
-        }
-    }
-
-    @ViewBuilder
-    private var previewContent: some View {
-        TabBarMenuPreviewRepresentable(mode: mode, viewModel: viewModel)
+            }
+            .onChange(of: mode) {
+                viewModel.updateMode(mode)
+            }
     }
 }
 
 #if DEBUG
 #Preview("TabBarMenu UITab") {
-    TabBarMenuPreviewScreen(mode: .uiTab)
+    NavigationStack{
+        TabBarMenuPreviewScreen(mode: .uiTab)
+    }
 }
 
 #Preview("TabBarMenu UITabBarItem") {
-    TabBarMenuPreviewScreen(mode: .uiTabBarItem)
+    NavigationStack{
+        TabBarMenuPreviewScreen(mode: .uiTabBarItem)
+    }
 }
 #endif
