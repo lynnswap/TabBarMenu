@@ -23,13 +23,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private var menuHostButton: UIButton?
     private var menuSource: MenuSource = .tabs
     private var cancellables = Set<AnyCancellable>()
-    private var delegateProxy: TabBarMenuTabBarControllerDelegateProxy?
-    private var delegateObservation: AnyCancellable?
-    private var isUpdatingDelegateProxy = false
 
     @MainActor deinit {
         stopObservingTabs()
-        stopObservingTabBarControllerDelegate()
     }
 
     func attach(to tabBarController: UITabBarController) {
@@ -38,7 +34,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
                 stopObservingTabs()
                 let tabBar = previousController.tabBar
                 removeMenuGestures(from: tabBar)
-                uninstallDelegateProxy(from: previousController)
+                uninstallSelectionHandler(from: previousController)
             }
             menuHostButton?.removeFromSuperview()
             menuHostButton = nil
@@ -54,7 +50,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             removeMenuGestures(from: tabBar)
         }
         if let tabBarController {
-            uninstallDelegateProxy(from: tabBarController)
+            uninstallSelectionHandler(from: tabBarController)
         }
         menuHostButton?.removeFromSuperview()
         menuHostButton = nil
@@ -65,7 +61,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard let tabBarController = tabBarController else {
             return
         }
-        refreshDelegateProxy()
+        refreshSelectionHandler()
         let tabBar = tabBarController.tabBar
         removeMenuGestures(from: tabBar)
         for (index, view) in tabBarIndexedViews(in: tabBar) {
@@ -106,64 +102,23 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         cancellables.removeAll()
     }
 
-    private func refreshDelegateProxy() {
+    private func refreshSelectionHandler() {
         guard let tabBarController else {
             return
         }
+        let tabBar = tabBarController.tabBar
         if configuration.moreTabMenuTrigger == .tap {
-            installDelegateProxy(on: tabBarController)
-        } else {
-            uninstallDelegateProxy(from: tabBarController)
-        }
-    }
-
-    private func installDelegateProxy(on tabBarController: UITabBarController) {
-        let proxy = delegateProxy ?? TabBarMenuTabBarControllerDelegateProxy(coordinator: self)
-        delegateProxy = proxy
-        if tabBarController.delegate !== proxy {
-            proxy.forwardDelegate = tabBarController.delegate
-        }
-        if tabBarController.delegate !== proxy {
-            isUpdatingDelegateProxy = true
-            tabBarController.delegate = proxy
-            isUpdatingDelegateProxy = false
-        }
-        startObservingTabBarControllerDelegate(for: tabBarController)
-    }
-
-    private func startObservingTabBarControllerDelegate(for tabBarController: UITabBarController) {
-        guard delegateObservation == nil else {
-            return
-        }
-        delegateObservation = tabBarController
-            .publisher(for: \.delegate, options: [.new])
-            .sink { [weak self, weak tabBarController] delegate in
-                guard let self, let tabBarController, tabBarController === self.tabBarController else { return }
-                guard !self.isUpdatingDelegateProxy else { return }
-                guard let proxy = self.delegateProxy else { return }
-                if delegate !== proxy {
-                    proxy.forwardDelegate = delegate
-                    self.installDelegateProxy(on: tabBarController)
-                }
+            tabBar.tabBarMenuSelectionHandler = { [weak self, weak tabBarController] _, item in
+                guard let self, let tabBarController else { return true }
+                return self.handleMoreSelection(item, in: tabBarController) == false
             }
+        } else {
+            tabBar.tabBarMenuSelectionHandler = nil
+        }
     }
 
-    private func stopObservingTabBarControllerDelegate() {
-        delegateObservation?.cancel()
-        delegateObservation = nil
-    }
-
-    private func uninstallDelegateProxy(from tabBarController: UITabBarController) {
-        stopObservingTabBarControllerDelegate()
-        guard let proxy = delegateProxy else {
-            return
-        }
-        if tabBarController.delegate === proxy {
-            isUpdatingDelegateProxy = true
-            tabBarController.delegate = proxy.forwardDelegate
-            isUpdatingDelegateProxy = false
-        }
-        delegateProxy = nil
+    private func uninstallSelectionHandler(from tabBarController: UITabBarController) {
+        tabBarController.tabBar.tabBarMenuSelectionHandler = nil
     }
 
     private func addLongPress(to view: UIView, tabIndex: Int, minimumPressDuration: TimeInterval) {
@@ -328,12 +283,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
     }
 
-    private func longPressDuration(for index: Int, in tabBarController: UITabBarController) -> TimeInterval {
-        if configuration.moreTabMenuTrigger == .tap,
-           menuSource == .tabs,
-           isMoreTabIndex(index, in: tabBarController) {
-            return 0
-        }
+    private func longPressDuration(for _: Int, in _: UITabBarController) -> TimeInterval {
         return configuration.minimumPressDuration
     }
 
@@ -493,6 +443,20 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return presentMenuForMoreTab(in: tabBarController)
     }
 
+    fileprivate func handleMoreSelection(_ item: UITabBarItem, in tabBarController: UITabBarController) -> Bool {
+        guard configuration.moreTabMenuTrigger == .tap else {
+            return false
+        }
+        guard let items = tabBarController.tabBar.items,
+              let index = items.firstIndex(where: { $0 === item }) else {
+            return false
+        }
+        guard isMoreTabIndex(index, in: tabBarController) else {
+            return false
+        }
+        return presentMenuForMoreTab(in: tabBarController)
+    }
+
     private func handleMenuTrigger(tabIndex: Int, sourceView: UIView, in tabBarController: UITabBarController) {
         guard let containerView = tabBarController.view ?? sourceView.window?.rootViewController?.view else {
             return
@@ -602,42 +566,5 @@ final class TabBarMenuLongPressGestureRecognizer: UILongPressGestureRecognizer {
 private final class MenuHostButton: UIButton {
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         return false
-    }
-}
-
-@MainActor
-private final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControllerDelegate {
-    weak var coordinator: TabBarMenuCoordinator?
-    weak var forwardDelegate: UITabBarControllerDelegate?
-
-    init(coordinator: TabBarMenuCoordinator) {
-        self.coordinator = coordinator
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
-        print(#function)
-        if coordinator?.handleMoreSelection(viewController, in: tabBarController) == true {
-            return false
-        }
-        return forwardDelegate?.tabBarController?(tabBarController, shouldSelect: viewController) ?? true
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
-        print(#function)
-        if coordinator?.handleMoreSelection(tab, in: tabBarController) == true {
-            return false
-        }
-        return forwardDelegate?.tabBarController?(tabBarController, shouldSelectTab: tab) ?? true
-    }
-
-    override func responds(to aSelector: Selector!) -> Bool {
-        if super.responds(to: aSelector) {
-            return true
-        }
-        return forwardDelegate?.responds(to: aSelector) ?? false
-    }
-
-    override func forwardingTarget(for aSelector: Selector!) -> Any? {
-        return forwardDelegate
     }
 }

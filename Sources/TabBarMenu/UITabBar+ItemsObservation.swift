@@ -7,13 +7,34 @@ extension UITabBar {
     var itemsDidChangePublisher: AnyPublisher<[UITabBarItem], Never> {
         Self.swizzleItemsSetterIfNeeded()
         Self.swizzleSetItemsIfNeeded()
+        Self.swizzleDidSelectButtonForItemIfNeeded()
         return itemsDidChangeSubject.eraseToAnyPublisher()
+    }
+
+    typealias TabBarMenuSelectionHandler = (UITabBar, UITabBarItem) -> Bool
+
+    var tabBarMenuSelectionHandler: TabBarMenuSelectionHandler? {
+        get {
+            objc_getAssociatedObject(self, &ItemsAssociatedKeys.selectionHandler) as? TabBarMenuSelectionHandler
+        }
+        set {
+            Self.swizzleDidSelectButtonForItemIfNeeded()
+            objc_setAssociatedObject(
+                self,
+                &ItemsAssociatedKeys.selectionHandler,
+                newValue,
+                .OBJC_ASSOCIATION_COPY_NONATOMIC
+            )
+        }
     }
 
     private static var hasSwizzledItemsSetter = false
     private static var itemsSetterIMP: IMP?
     private static var hasSwizzledSetItems = false
     private static var setItemsIMP: IMP?
+    private static var hasSwizzledDidSelectButtonForItem = false
+    private static var didSelectButtonForItemIMP: IMP?
+    private static let didSelectButtonForItemSelectorParts = ["Item:", "For", "Button", "Select", "did", "_"]
 
     private static func swizzleItemsSetterIfNeeded() {
         guard !hasSwizzledItemsSetter else { return }
@@ -54,6 +75,38 @@ extension UITabBar {
                     original(tabBar, selector, items, animated)
                 }
             }
+        }
+        let newImp = imp_implementationWithBlock(block)
+        method_setImplementation(method, newImp)
+    }
+
+    private static func swizzleDidSelectButtonForItemIfNeeded() {
+        guard !hasSwizzledDidSelectButtonForItem else { return }
+        let selector = NSSelectorFromString(Self.didSelectButtonForItemSelectorParts.reversed().joined())
+        guard let method = class_getInstanceMethod(UITabBar.self, selector) else {
+            return
+        }
+        hasSwizzledDidSelectButtonForItem = true
+        let originalImp = method_getImplementation(method)
+        didSelectButtonForItemIMP = originalImp
+        let block: @convention(block) (UITabBar, AnyObject?) -> Void = { tabBar, item in
+            @MainActor
+            func callOrig() {
+                if let imp = UITabBar.didSelectButtonForItemIMP {
+                    typealias Original = @convention(c) (AnyObject, Selector, AnyObject?) -> Void
+                    let original = unsafeBitCast(imp, to: Original.self)
+                    original(tabBar, selector, item)
+                }
+            }
+
+            guard let tabBarItem = item as? UITabBarItem else {
+                callOrig()
+                return
+            }
+            if let handler = tabBar.tabBarMenuSelectionHandler, handler(tabBar, tabBarItem) == false {
+                return
+            }
+            callOrig()
         }
         let newImp = imp_implementationWithBlock(block)
         method_setImplementation(method, newImp)
@@ -101,4 +154,5 @@ extension UITabBar {
 private enum ItemsAssociatedKeys {
     static var subject = UInt8(0)
     static var mutationDepth = UInt8(1)
+    static var selectionHandler = UInt8(2)
 }
