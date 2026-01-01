@@ -19,7 +19,22 @@ private final class TestMenuDelegate: TabBarMenuDelegate {
 }
 
 @MainActor
-private final class ViewControllerMenuDelegate: TabBarMenuViewControllerDelegate {
+private final class MoreTabMenuDelegate: TabBarMenuDelegate {
+    private(set) var requestedTabsCount = 0
+    private let menu: UIMenu?
+
+    init(menu: UIMenu?) {
+        self.menu = menu
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+        requestedTabsCount += 1
+        return menu
+    }
+}
+
+@MainActor
+private final class ViewControllerMenuDelegate: TabBarMenuDelegate {
     private(set) var requestedTitles: [String?] = []
     private let menu: UIMenu
 
@@ -179,6 +194,18 @@ private func menuMinimumPressDurations(in tabBar: UITabBar) -> [TimeInterval] {
 @MainActor
 private func menuLongPressDurationsByIndex(in tabBar: UITabBar) -> [Int: TimeInterval] {
     Dictionary(uniqueKeysWithValues: menuLongPressRecognizers(in: tabBar).map { ($0.tabIndex, $0.minimumPressDuration) })
+}
+@MainActor
+private func moreTabBarItem(in tabBarController: UITabBarController) -> UITabBarItem? {
+    let maxVisibleCount = tabBarController.menuConfiguration.maxVisibleTabCount
+    guard maxVisibleCount > 0 else {
+        return nil
+    }
+    let moreIndex = maxVisibleCount - 1
+    guard let items = tabBarController.tabBar.items, items.indices.contains(moreIndex) else {
+        return nil
+    }
+    return items[moreIndex]
 }
 
 @Test("itemsDidChangePublisher emits when items are assigned")
@@ -411,32 +438,46 @@ func menuConfigurationUpdatesMinimumPressDuration() async {
     }
 }
 
-@Test("menuConfiguration uses tap for the More tab when configured")
+@Test("more tab selection allows default when menu is absent")
 @MainActor
-func menuConfigurationUsesTapForMoreTabWhenConfigured() async {
+func moreTabSelectionAllowsDefaultWhenMenuIsAbsent() async {
     let context = makeTabBarTestContext(tabCount: 6)
-    let delegate = TestMenuDelegate()
+    let delegate = MoreTabMenuDelegate(menu: nil)
 
-    context.controller.updateMenuConfiguration { configuration in
-        configuration.moreTabMenuTrigger = .tap
-    }
     context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
 
-    let buttonViews = tabBarButtonViews(in: context.controller.tabBar)
-    let expectedCount = min(context.tabs.count, buttonViews.count)
-    let moreIndex = context.controller.menuConfiguration.maxVisibleTabCount - 1
-    let longPressIndices = menuRecognizerIndices(in: context.controller.tabBar)
-    let durationsByIndex = menuLongPressDurationsByIndex(in: context.controller.tabBar)
-
-    if expectedCount > moreIndex {
-        #expect(longPressIndices.contains(moreIndex))
-        if let duration = durationsByIndex[moreIndex] {
-            #expect(abs(duration - 0) < 0.001)
-        } else {
-            #expect(false)
-        }
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(handler != nil)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+    if let handler, let moreItem {
+        let shouldCallDefault = handler(context.controller.tabBar, moreItem)
+        #expect(shouldCallDefault == true)
     }
-    #expect(longPressIndices.count == expectedCount)
+    #expect(delegate.requestedTabsCount == 1)
+}
+
+@Test("more tab selection suppresses default when menu is provided")
+@MainActor
+func moreTabSelectionSuppressesDefaultWhenMenuIsProvided() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: UIMenu(children: []))
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(handler != nil)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+    if let handler, let moreItem {
+        let shouldCallDefault = handler(context.controller.tabBar, moreItem)
+        #expect(shouldCallDefault == false)
+    }
+    #expect(delegate.requestedTabsCount == 1)
 }
 
 @Test("coordinator reattaches to a different tab bar controller")

@@ -37,7 +37,7 @@ private final class TabBarMenuPreviewViewModel {
             applyTabs()
         }
     }
-    private var previewController: TabBarMenuPreviewBaseController?
+    private var previewController: TabBarMenuPreviewController?
     private weak var containerController: TabBarMenuPreviewContainerController?
     private var currentMode: TabBarMenuPreviewMode?
 
@@ -57,13 +57,7 @@ private final class TabBarMenuPreviewViewModel {
             return
         }
         currentMode = mode
-        let controller: TabBarMenuPreviewBaseController
-        switch mode {
-        case .uiTab:
-            controller = TabBarMenuPreviewTabsController()
-        case .uiTabBarItem:
-            controller = TabBarMenuPreviewItemsController()
-        }
+        let controller = TabBarMenuPreviewController(mode: mode)
         previewController = controller
         configure(controller)
         controller.applyPreviewTabs(tabs, showsSearchTab: isSearchTabEnabled)
@@ -100,10 +94,7 @@ private final class TabBarMenuPreviewViewModel {
         previewController?.applyPreviewTabs(tabs, showsSearchTab: isSearchTabEnabled)
     }
 
-    private func configure(_ controller: TabBarMenuPreviewBaseController) {
-        controller.updateMenuConfiguration { configuration in
-            configuration.moreTabMenuTrigger = .tap
-        }
+    private func configure(_ controller: TabBarMenuPreviewController) {
         controller.menuDelegate = controller
         controller.viewModel = self
     }
@@ -115,12 +106,46 @@ public enum TabBarMenuPreviewMode: String {
 }
 
 @MainActor
-private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDelegate {
+private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuDelegate {
+    var previewMode: TabBarMenuPreviewMode
     weak var viewModel: TabBarMenuPreviewViewModel?
+    private var hasAppliedContent = false
 
-    func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool) {}
+    init(mode: TabBarMenuPreviewMode) {
+        self.previewMode = mode
+        super.init(nibName: nil, bundle: nil)
+    }
 
-    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool) {
+        switch previewMode {
+        case .uiTab:
+            var updatedTabs = previewTabs.map { makeUITab($0) }
+            if showsSearchTab {
+                updatedTabs.append(makeSearchUITab())
+            }
+            let shouldAnimate = hasAppliedContent
+            setTabs(updatedTabs, animated: shouldAnimate)
+            hasAppliedContent = true
+        case .uiTabBarItem:
+            var updatedViewControllers = previewTabs.map { makeViewController($0) }
+            if showsSearchTab {
+                updatedViewControllers.append(makeSearchViewController())
+            }
+            let shouldAnimate = hasAppliedContent
+            setViewControllers(updatedViewControllers, animated: shouldAnimate)
+            hasAppliedContent = true
+        }
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        tab: UITab?
+    ) -> UIMenu? {
         guard let tab else {
             return nil
         }
@@ -129,7 +154,23 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
         }
     }
 
-    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        viewController: UIViewController?
+    ) -> UIMenu? {
+        guard let viewController else {
+            return nil
+        }
+        let title = viewController.title ?? viewController.tabBarItem.title ?? ""
+        return makeMenu(title: title) { [weak self] in
+            self?.viewModel?.deleteTab(viewController)
+        }
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        menuForMoreTabWith tabs: [UITab]
+    ) -> UIMenu? {
         guard !tabs.isEmpty else {
             return nil
         }
@@ -146,94 +187,6 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
             }
         }
         return UIMenu(children: actions)
-    }
-
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        configureMenuPresentationFor tab: UITab,
-        tabFrame: CGRect,
-        in containerView: UIView,
-        menuHostButton: UIButton
-    ) -> TabBarMenuAnchorPlacement?{
-        menuHostButton.preferredMenuElementOrder = .fixed
-        return nil
-    }
-
-    fileprivate func makeMenu(title: String, deleteHandler: @escaping () -> Void) -> UIMenu {
-        let rename = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in }
-        let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
-            deleteHandler()
-        }
-        return UIMenu(title: title, children: [rename, delete])
-    }
-}
-
-@MainActor
-private final class TabBarMenuPreviewContainerController: UIViewController {
-    private var currentController: UIViewController?
-
-    func setContent(_ controller: UIViewController) {
-        guard currentController !== controller else {
-            return
-        }
-        if let currentController {
-            currentController.willMove(toParent: nil)
-            currentController.view.removeFromSuperview()
-            currentController.removeFromParent()
-        }
-        addChild(controller)
-        controller.view.frame = view.bounds
-        controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(controller.view)
-        controller.didMove(toParent: self)
-        currentController = controller
-    }
-}
-
-private final class TabBarMenuPreviewTabsController: TabBarMenuPreviewBaseController {
-    private var hasAppliedTabs = false
-
-    override func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool) {
-        var updatedTabs = previewTabs.map { makeTab($0) }
-        if showsSearchTab {
-            updatedTabs.append(makeSearchTab())
-        }
-        let shouldAnimate = hasAppliedTabs
-        setTabs(updatedTabs, animated: shouldAnimate)
-        hasAppliedTabs = true
-    }
-    func makeTab(_ tab: PreviewTab) -> UITab {
-        UITab(title: tab.title, image: UIImage(systemName: tab.systemImageName), identifier: tab.identifier) { _ in
-            let controller = UIHostingController(
-                rootView: SampleTabView(title: tab.title, systemImage: tab.systemImageName)
-            )
-            controller.title = tab.title
-            return controller
-        }
-    }
-
-    private func makeSearchTab() -> UISearchTab {
-        UISearchTab { _ in
-            let controller = UIHostingController(
-                rootView: SampleTabView(title: "Search", systemImage: "magnifyingglass")
-            )
-            controller.title = "Search"
-            return controller
-        }
-    }
-}
-
-private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseController, TabBarMenuViewControllerDelegate {
-    private var hasAppliedTabs = false
-
-    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
-        guard let viewController else {
-            return nil
-        }
-        let title = viewController.title ?? viewController.tabBarItem.title ?? ""
-        return makeMenu(title: title) { [weak self] in
-            self?.viewModel?.deleteTab(viewController)
-        }
     }
 
     func tabBarController(
@@ -260,6 +213,17 @@ private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseContr
 
     func tabBarController(
         _ tabBarController: UITabBarController,
+        configureMenuPresentationFor tab: UITab,
+        tabFrame: CGRect,
+        in containerView: UIView,
+        menuHostButton: UIButton
+    ) -> TabBarMenuAnchorPlacement?{
+        menuHostButton.preferredMenuElementOrder = .fixed
+        return nil
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
         configureMenuPresentationFor viewController: UIViewController,
         tabFrame: CGRect,
         in containerView: UIView,
@@ -269,16 +233,35 @@ private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseContr
         return nil
     }
 
-    override func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool) {
-        var updatedViewControllers = previewTabs.map { makeTab($0) }
-        if showsSearchTab {
-            updatedViewControllers.append(makeSearchTab())
+    private func makeMenu(title: String, deleteHandler: @escaping () -> Void) -> UIMenu {
+        let rename = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in }
+        let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
+            deleteHandler()
         }
-        let shouldAnimate = hasAppliedTabs
-        setViewControllers(updatedViewControllers, animated: shouldAnimate)
-        hasAppliedTabs = true
+        return UIMenu(title: title, children: [rename, delete])
     }
-    func makeTab(_ tab: PreviewTab) -> UIViewController {
+
+    private func makeUITab(_ tab: PreviewTab) -> UITab {
+        UITab(title: tab.title, image: UIImage(systemName: tab.systemImageName), identifier: tab.identifier) { _ in
+            let controller = UIHostingController(
+                rootView: SampleTabView(title: tab.title, systemImage: tab.systemImageName)
+            )
+            controller.title = tab.title
+            return controller
+        }
+    }
+
+    private func makeSearchUITab() -> UISearchTab {
+        UISearchTab { _ in
+            let controller = UIHostingController(
+                rootView: SampleTabView(title: "Search", systemImage: "magnifyingglass")
+            )
+            controller.title = "Search"
+            return controller
+        }
+    }
+
+    private func makeViewController(_ tab: PreviewTab) -> UIViewController {
         let controller = UIHostingController(
             rootView: SampleTabView(title: tab.title, systemImage: tab.systemImageName)
         )
@@ -292,7 +275,7 @@ private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseContr
         return controller
     }
 
-    func makeSearchTab() -> UIViewController {
+    private func makeSearchViewController() -> UIViewController {
         let controller = UIHostingController(
             rootView: SampleTabView(title: "Search", systemImage: "magnifyingglass")
         )
@@ -301,6 +284,29 @@ private final class TabBarMenuPreviewItemsController: TabBarMenuPreviewBaseContr
         return controller
     }
 }
+
+@MainActor
+private final class TabBarMenuPreviewContainerController: UIViewController {
+    private var currentController: UIViewController?
+
+    func setContent(_ controller: UIViewController) {
+        guard currentController !== controller else {
+            return
+        }
+        if let currentController {
+            currentController.willMove(toParent: nil)
+            currentController.view.removeFromSuperview()
+            currentController.removeFromParent()
+        }
+        addChild(controller)
+        controller.view.frame = view.bounds
+        controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(controller.view)
+        controller.didMove(toParent: self)
+        currentController = controller
+    }
+}
+
 private struct SampleTabView: View {
     let title: String
     let systemImage: String

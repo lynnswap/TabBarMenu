@@ -46,35 +46,11 @@ final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
 
 Use `tabBarController(_:menuForMoreTabWith:)` to provide a menu for the system More tab. Return `nil` to disable the menu for a given tab. Set `menuDelegate = nil` to remove menu handling.
 
-If you configure the tab bar controller with `viewControllers`, conform to `TabBarMenuViewControllerDelegate` instead. Implement `tabBarController(_:menuForMoreTabWith:)` to provide a menu for the system More tab.
-TabBarMenu chooses the menu source based on which delegate protocol you adopt.
-
-```swift
-final class MainTabBarController: UITabBarController, TabBarMenuViewControllerDelegate {
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        menuDelegate = self
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
-        guard let viewController else { return nil }
-        let tabBarItem = viewController.tabBarItem
-        let rename = UIAction(title: "Rename") { _ in
-            // Handle rename
-        }
-        return UIMenu(title: tabBarItem.title ?? "", children: [rename])
-    }
-}
-```
-
 ## More tab menu
 
 Implement the dedicated delegate method to provide a menu for the system More tab.
-For `TabBarMenuViewControllerDelegate`, use the `viewControllers` variant.
-When `moreTabMenuTrigger = .tap`, TabBarMenu uses `UITabBarControllerDelegate`
-to suppress the system More screen when available. For `UITab`-based tabs, the
-More tab also uses an immediate long-press (`minimumPressDuration = 0`) as a
-fallback because the More tab does not always trigger `shouldSelectTab`.
+When `menuForMoreTabWith` returns a menu, TabBarMenu presents it on tap and
+suppresses the system More screen. Long-press menus are still supported.
 
 ```swift
 func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
@@ -87,12 +63,10 @@ func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith
 
 Customize menu behavior via `menuConfiguration` (default minimum press duration is 0.35 seconds).
 Set `maxVisibleTabCount` to the number of tabs shown before the system displays the More tab (default 5).
-Set `moreTabMenuTrigger` to `.tap` to present the More tab menu on tap (default is `.longPress`).
 
 ```swift
 tabBarController.updateMenuConfiguration { configuration in
     configuration.minimumPressDuration = 0.5
-    configuration.moreTabMenuTrigger = .tap
     configuration.maxVisibleTabCount = 5
 }
 ```
