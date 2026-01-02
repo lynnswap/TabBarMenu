@@ -1,13 +1,6 @@
 import UIKit
 
 @MainActor
-enum MoreSelection {
-    case item(UITabBarItem)
-    case tab(UITab)
-    case viewController(UIViewController)
-}
-
-@MainActor
 enum ItemMenuTarget {
     case tab(UITab)
     case viewController(UIViewController)
@@ -194,26 +187,12 @@ enum MoreMenuRequest {
         }
     }
 
-    func matches(_ selection: MoreSelection, in tabBarController: UITabBarController) -> Bool {
+    func matches(item: UITabBarItem, in tabBarController: UITabBarController) -> Bool {
         switch self {
         case .tabs(let context):
-            switch selection {
-            case .item(let item):
-                return context.matchesItem(item, in: tabBarController)
-            case .tab(let tab):
-                return context.isMoreTab(tab, in: tabBarController)
-            case .viewController:
-                return false
-            }
+            return context.matchesItem(item, in: tabBarController)
         case .viewControllers(let context):
-            switch selection {
-            case .item(let item):
-                return context.matchesItem(item, in: tabBarController)
-            case .tab:
-                return false
-            case .viewController(let viewController):
-                return context.isMoreViewController(viewController, in: tabBarController)
-            }
+            return context.matchesItem(item, in: tabBarController)
         }
     }
 
