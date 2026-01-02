@@ -192,7 +192,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         in tabBarController: UITabBarController,
         context: PresentationContext,
         request: MoreMenuRequest,
-        delegate: TabBarMenuMenuDelegate
+        delegate: TabBarMenuContentDelegate
     ) -> MenuPlan? {
         guard request.isMoreTabIndex(tabIndex, in: tabBarController),
               let menu = request.menu(in: tabBarController, delegate: delegate) else {
@@ -409,7 +409,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private func makeMoreMenuPresentation(
         in tabBarController: UITabBarController,
         request: MoreMenuRequest,
-        delegate: TabBarMenuMenuDelegate
+        delegate: TabBarMenuContentDelegate
     ) -> MoreMenuPresentation? {
         guard let menu = request.menu(in: tabBarController, delegate: delegate),
               let moreTabIndex = request.moreTabStartIndex(in: tabBarController),

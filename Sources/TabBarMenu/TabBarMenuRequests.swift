@@ -158,7 +158,7 @@ enum MoreMenuRequest {
         }
     }
 
-    func menu(in tabBarController: UITabBarController, delegate: TabBarMenuMenuDelegate) -> UIMenu? {
+    func menu(in tabBarController: UITabBarController, delegate: TabBarMenuContentDelegate) -> UIMenu? {
         switch self {
         case .tabs(let context):
             let items = context.moreItems(in: tabBarController)
@@ -195,7 +195,7 @@ enum MoreMenuRequest {
 }
 
 extension MoreMenuRequest {
-    static func make(delegate: TabBarMenuMenuDelegate?, core: TabBarMenuRequestCore) -> MoreMenuRequest? {
+    static func make(delegate: TabBarMenuContentDelegate?, core: TabBarMenuRequestCore) -> MoreMenuRequest? {
         guard let delegate else {
             return nil
         }

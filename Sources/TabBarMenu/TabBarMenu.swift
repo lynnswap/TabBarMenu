@@ -46,7 +46,7 @@ public struct TabBarMenuConfiguration: Equatable {
 /// Objective-C-compatible delegate methods for menu content.
 ///
 /// Prefer conforming to `TabBarMenuDelegate` instead of this protocol directly.
-@MainActor @objc public protocol TabBarMenuMenuDelegate: NSObjectProtocol {
+@MainActor @objc public protocol TabBarMenuContentDelegate: NSObjectProtocol {
     /// Asks the delegate for the menu to present for the specified tab.
     /// - Parameters:
     ///   - tabBarController: The tab bar controller requesting the menu.
@@ -134,7 +134,7 @@ public struct TabBarMenuConfiguration: Equatable {
 ///
 /// - Important: Return `nil` to disable the menu for a given item.
 /// - Note: Conforming types should be Objective-C compatible (for example, subclass `NSObject`) so `responds(to:)` works.
-@MainActor public protocol TabBarMenuDelegate: TabBarMenuMenuDelegate, TabBarMenuPresentationDelegate {}
+@MainActor public protocol TabBarMenuDelegate: TabBarMenuContentDelegate, TabBarMenuPresentationDelegate {}
 
 @MainActor
 public extension TabBarMenuPresentationDelegate {
