@@ -4,7 +4,7 @@ import Combine
 @testable import TabBarMenu
 
 @MainActor
-private final class TestMenuDelegate: TabBarMenuDelegate {
+private final class TestMenuDelegate: NSObject, TabBarMenuDelegate {
     private(set) var requestedIdentifiers: [String?] = []
     private let menu: UIMenu
 
@@ -19,7 +19,48 @@ private final class TestMenuDelegate: TabBarMenuDelegate {
 }
 
 @MainActor
-private final class ViewControllerMenuDelegate: TabBarMenuViewControllerDelegate {
+private final class MoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
+    private(set) var requestedTabsCount = 0
+    private let menu: UIMenu?
+
+    init(menu: UIMenu?) {
+        self.menu = menu
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+        requestedTabsCount += 1
+        return menu
+    }
+}
+
+@MainActor
+private final class DualMoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
+    private(set) var requestedTabsCount = 0
+    private(set) var requestedViewControllersCount = 0
+    private let tabsMenu: UIMenu?
+    private let viewControllersMenu: UIMenu?
+
+    init(tabsMenu: UIMenu?, viewControllersMenu: UIMenu?) {
+        self.tabsMenu = tabsMenu
+        self.viewControllersMenu = viewControllersMenu
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+        requestedTabsCount += 1
+        return tabsMenu
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        menuForMoreTabWith viewControllers: [UIViewController]
+    ) -> UIMenu? {
+        requestedViewControllersCount += 1
+        return viewControllersMenu
+    }
+}
+
+@MainActor
+private final class ViewControllerMenuDelegate: NSObject, TabBarMenuDelegate {
     private(set) var requestedTitles: [String?] = []
     private let menu: UIMenu
 
@@ -30,6 +71,16 @@ private final class ViewControllerMenuDelegate: TabBarMenuViewControllerDelegate
     func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
         requestedTitles.append(viewController?.title)
         return menu
+    }
+}
+
+@MainActor
+private final class NoViewTabBarItem: UITabBarItem {
+    override func responds(to aSelector: Selector!) -> Bool {
+        if let selector = aSelector, selector == NSSelectorFromString("view") {
+            return false
+        }
+        return super.responds(to: aSelector)
     }
 }
 
@@ -98,6 +149,16 @@ private func makeViewControllers(count: Int) -> [UIViewController] {
         let controller = UIViewController()
         controller.title = "View \(index)"
         controller.tabBarItem = UITabBarItem(title: "Item \(index)", image: nil, tag: index)
+        return controller
+    }
+}
+
+@MainActor
+private func makeViewControllersWithNoViewItems(count: Int) -> [UIViewController] {
+    (0..<count).map { index in
+        let controller = UIViewController()
+        controller.title = "View \(index)"
+        controller.tabBarItem = NoViewTabBarItem(title: "Item \(index)", image: nil, tag: index)
         return controller
     }
 }
@@ -175,6 +236,33 @@ private func menuRecognizerIndices(in tabBar: UITabBar) -> Set<Int> {
 @MainActor
 private func menuMinimumPressDurations(in tabBar: UITabBar) -> [TimeInterval] {
     menuLongPressRecognizers(in: tabBar).map(\.minimumPressDuration)
+}
+@MainActor
+private func menuLongPressDurationsByIndex(in tabBar: UITabBar) -> [Int: TimeInterval] {
+    Dictionary(uniqueKeysWithValues: menuLongPressRecognizers(in: tabBar).map { ($0.tabIndex, $0.minimumPressDuration) })
+}
+@MainActor
+private func menuRecognizerMinXAndIndices(in tabBar: UITabBar) -> [(minX: CGFloat, index: Int)] {
+    let controls = tabBarControls(in: tabBar)
+    return controls.compactMap { control in
+        guard let recognizer = (control.gestureRecognizers ?? []).compactMap({ $0 as? TabBarMenuLongPressGestureRecognizer }).first else {
+            return nil
+        }
+        let frame = control.convert(control.bounds, to: tabBar)
+        return (frame.minX, recognizer.tabIndex)
+    }
+}
+@MainActor
+private func moreTabBarItem(in tabBarController: UITabBarController) -> UITabBarItem? {
+    let maxVisibleCount = tabBarController.menuConfiguration.maxVisibleTabCount
+    guard maxVisibleCount > 0 else {
+        return nil
+    }
+    let moreIndex = maxVisibleCount - 1
+    guard let items = tabBarController.tabBar.items, items.indices.contains(moreIndex) else {
+        return nil
+    }
+    return items[moreIndex]
 }
 
 @Test("itemsDidChangePublisher emits when items are assigned")
@@ -278,6 +366,54 @@ func menuDelegateAttachesLongPressGesturesForViewControllers() async {
     #expect(indices.count == expectedCount)
     #expect(indices == expectedIndices)
     #expect(host.window.rootViewController === controller)
+}
+
+@Test("RTL fallback ordering maps indices to right-to-left controls")
+@MainActor
+func rtlFallbackOrderingMapsIndicesToRightToLeftControls() async {
+    let controller = UITabBarController()
+    let viewControllers = makeViewControllersWithNoViewItems(count: 3)
+    controller.setViewControllers(viewControllers, animated: false)
+    controller.tabBar.semanticContentAttribute = .forceRightToLeft
+    let host = WindowHost(rootViewController: controller)
+    let delegate = ViewControllerMenuDelegate()
+
+    controller.menuDelegate = delegate
+    controller.view.setNeedsLayout()
+    host.window.layoutIfNeeded()
+
+    #expect(controller.tabBar.effectiveUserInterfaceLayoutDirection == .rightToLeft)
+    let itemViews = controller.tabBar.items?.compactMap { tabBarItemView($0) } ?? []
+    #expect(itemViews.isEmpty)
+
+    let entries = menuRecognizerMinXAndIndices(in: controller.tabBar)
+    #expect(entries.count == viewControllers.count)
+    let sortedEntries = entries.sorted { $0.minX > $1.minX }
+    #expect(sortedEntries.map(\.index) == Array(0..<entries.count))
+}
+
+@Test("LTR fallback ordering maps indices to left-to-right controls")
+@MainActor
+func ltrFallbackOrderingMapsIndicesToLeftToRightControls() async {
+    let controller = UITabBarController()
+    let viewControllers = makeViewControllersWithNoViewItems(count: 3)
+    controller.setViewControllers(viewControllers, animated: false)
+    controller.tabBar.semanticContentAttribute = .forceLeftToRight
+    let host = WindowHost(rootViewController: controller)
+    let delegate = ViewControllerMenuDelegate()
+
+    controller.menuDelegate = delegate
+    controller.view.setNeedsLayout()
+    host.window.layoutIfNeeded()
+
+    #expect(controller.tabBar.effectiveUserInterfaceLayoutDirection == .leftToRight)
+    let itemViews = controller.tabBar.items?.compactMap { tabBarItemView($0) } ?? []
+    #expect(itemViews.isEmpty)
+
+    let entries = menuRecognizerMinXAndIndices(in: controller.tabBar)
+    #expect(entries.count == viewControllers.count)
+    let sortedEntries = entries.sorted { $0.minX < $1.minX }
+    #expect(sortedEntries.map(\.index) == Array(0..<entries.count))
 }
 
 @Test("menuDelegate supports self assignment")
@@ -405,6 +541,73 @@ func menuConfigurationUpdatesMinimumPressDuration() async {
     if expectedCount > 0 {
         #expect(updatedDurations.allSatisfy { abs($0 - 0.6) < 0.001 })
     }
+}
+
+@Test("more tab selection allows default when menu is absent")
+@MainActor
+func moreTabSelectionAllowsDefaultWhenMenuIsAbsent() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: nil)
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(handler != nil)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+    if let handler, let moreItem {
+        let shouldCallDefault = handler(context.controller.tabBar, moreItem)
+        #expect(shouldCallDefault == true)
+    }
+    #expect(delegate.requestedTabsCount == 1)
+}
+
+@Test("more tab selection prefers tabs method when implemented")
+@MainActor
+func moreTabSelectionPrefersTabsMethodWhenImplemented() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = DualMoreTabMenuDelegate(
+        tabsMenu: nil,
+        viewControllersMenu: UIMenu(children: [])
+    )
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(handler != nil)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+    if let handler, let moreItem {
+        let shouldCallDefault = handler(context.controller.tabBar, moreItem)
+        #expect(shouldCallDefault == true)
+    }
+    #expect(delegate.requestedTabsCount == 1)
+    #expect(delegate.requestedViewControllersCount == 0)
+}
+
+@Test("more tab selection suppresses default when menu is provided")
+@MainActor
+func moreTabSelectionSuppressesDefaultWhenMenuIsProvided() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: UIMenu(children: []))
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(handler != nil)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+    if let handler, let moreItem {
+        let shouldCallDefault = handler(context.controller.tabBar, moreItem)
+        #expect(shouldCallDefault == false)
+    }
+    #expect(delegate.requestedTabsCount == 1)
 }
 
 @Test("coordinator reattaches to a different tab bar controller")

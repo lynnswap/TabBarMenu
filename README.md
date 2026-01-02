@@ -1,6 +1,6 @@
 # TabBarMenu
 
-TabBarMenu adds long-press context menus to `UITabBarController` tabs on iOS 18+.
+Add long-press context menus to `UITabBarController` tabs on **iOS 18+**.
 
 ![TabBarMenu preview](Docs/images/anchor-above.webp)
 
@@ -9,17 +9,23 @@ TabBarMenu adds long-press context menus to `UITabBarController` tabs on iOS 18+
 - iOS 18.0+
 - Swift 6.2 (Swift tools version in `Package.swift`)
 
-## Installation
+## Installation (Swift Package Manager)
 
-Add the package via Swift Package Manager in Xcode:
+In Xcode:
 
-1. File > Add Packages...
+1. **File** → **Add Packages…**
 2. Enter the repository URL
-3. Add the `TabBarMenu` product to your target
+3. Add the **TabBarMenu** product to your target
 
-## Usage
+## Quick start
 
-Conform to `TabBarMenuDelegate` and set `menuDelegate` on your tab bar controller.
+1. Conform to `TabBarMenuDelegate`
+2. Set `menuDelegate` on your tab bar controller
+3. Return a `UIMenu` for the pressed tab
+
+> Tip: You can implement the `UITab` delegate method, the `UIViewController` delegate method, or both.
+> If both are implemented, TabBarMenu tries the `UITab` delegate method first (when `UITabBarController.tabs` is available)
+> and falls back to the view-controller delegate method.
 
 ```swift
 import UIKit
@@ -31,59 +37,93 @@ final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
         menuDelegate = self
     }
 
+    // iOS 18+ UITab-based API
     func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
-        guard let tab else { return nil }
+        makeMenu(title: tab?.title)
+    }
+
+    // Classic UIKit (viewControllers-based)
+    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
+        makeMenu(title: viewController?.tabBarItem.title)
+    }
+
+    private func makeMenu(title: String?) -> UIMenu? {
+        guard let title else { return nil }
+
         let rename = UIAction(title: "Rename") { _ in
             // Handle rename
         }
         let delete = UIAction(title: "Delete", attributes: .destructive) { _ in
             // Handle delete
         }
-        return UIMenu(title: tab.title, children: [rename, delete])
+
+        return UIMenu(title: title, children: [rename, delete])
     }
 }
 ```
 
-`tab` is `nil` for the system More tab. Return `nil` to disable the menu for a given tab. Set `menuDelegate = nil` to remove menu handling.
+- Return `nil` to disable the menu for a specific tab.
+- Set `menuDelegate = nil` to detach TabBarMenu.
 
-If you configure the tab bar controller with `viewControllers`, conform to `TabBarMenuViewControllerDelegate` instead. `viewController` is `nil` for the system More tab.
-TabBarMenu chooses the menu source based on which delegate protocol you adopt.
+## Optional: menu for the system “More” tab
+
+Provide a menu for the system **More** tab (when you have many tabs).
+
+When `menuForMoreTabWith…` returns a menu, TabBarMenu presents it **on tap** and suppresses the system More screen.
+(Long-press menus are still supported.)
 
 ```swift
-final class MainTabBarController: UITabBarController, TabBarMenuViewControllerDelegate {
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        menuDelegate = self
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
-        guard let viewController else { return nil }
-        let tabBarItem = viewController.tabBarItem
-        let rename = UIAction(title: "Rename") { _ in
-            // Handle rename
-        }
-        return UIMenu(title: tabBarItem.title ?? "", children: [rename])
-    }
+func tabBarController(
+    _ tabBarController: UITabBarController,
+    menuForMoreTabWith tabs: [UITab]
+) -> UIMenu? {
+    let titles = tabs.map(\.title).joined(separator: ", ")
+    return UIMenu(title: "More: \(titles)", children: [])
 }
 ```
 
-## Configuration
+If you don’t use `UITab`, there’s also a `menuForMoreTabWith viewControllers: [UIViewController]` delegate method.
 
-Customize menu behavior via `menuConfiguration` (default minimum press duration is 0.35 seconds).
-Set `maxVisibleTabCount` to the number of tabs shown before the system displays the More tab (default 5).
+## Optional: configuration
 
 ```swift
-tabBarController.updateMenuConfiguration { configuration in
+updateMenuConfiguration { configuration in
     configuration.minimumPressDuration = 0.5
     configuration.maxVisibleTabCount = 5
 }
 ```
 
-## Updating a visible menu
+## Optional: menu anchor placement
 
-To refresh the menu while it is visible, call `updateTabBarMenu(_:)` on the tab bar controller.
-The closure receives the current menu (if any) and must return the updated menu.
-The method returns `false` when there is no active menu host button.
+Implement `configureMenuPresentationFor…` to customize the anchor placement and menu host button.
+
+```swift
+func tabBarController(
+    _ tabBarController: UITabBarController,
+    configureMenuPresentationFor tab: UITab,
+    tabFrame: CGRect,
+    in containerView: UIView,
+    menuHostButton: UIButton
+) -> TabBarMenuAnchorPlacement? {
+    menuHostButton.preferredMenuElementOrder = .fixed
+    return .above()
+}
+```
+
+Available placements:
+
+- `.inside`
+- `.above(offset:)`
+- `.custom(CGPoint)`
+- `.manual`
+
+| Inside placement | Above placement |
+| --- | --- |
+| ![Inside placement example](Docs/images/anchor-inside.webp) | ![Above placement example](Docs/images/anchor-above.webp) |
+
+## Optional: update a visible menu
+
+To refresh the menu while it’s visible:
 
 ```swift
 tabBarController.updateTabBarMenu { currentMenu in
@@ -93,37 +133,9 @@ tabBarController.updateTabBarMenu { currentMenu in
 }
 ```
 
-## Menu presentation
+## Demo app
 
-To customize the menu anchor point and configure the menu host button, implement the optional
-delegate method that returns `TabBarMenuAnchorPlacement`. Return `nil` to keep the default
-placement (inside the tab bar). You can also set `menuHostButton.preferredMenuElementOrder`
-here if needed.
-
-```swift
-final class MainTabBarController: UITabBarController, TabBarMenuDelegate {
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        configureMenuPresentationFor tab: UITab,
-        tabFrame: CGRect,
-        in containerView: UIView,
-        menuHostButton: UIButton
-    ) -> TabBarMenuAnchorPlacement? {
-        .above()
-    }
-}
-```
-
-## TabBarMenuAnchorPlacement
-
-- `.inside`: uses the default anchor point inside the tab bar.
-- `.above(offset:)`: places the anchor above the tab bar. The default offset is 8 on iOS 26+, or -12 on earlier iOS versions.
-- `.custom(CGPoint)`: uses a custom point in the container view's coordinate space.
-- `.manual`: delegate sets `menuHostButton.frame` manually in `configureMenuPresentationFor`.
-
-| Inside placement | Above placement |
-| --- | --- |
-| ![Inside placement example](Docs/images/anchor-inside.webp) | ![Above placement example](Docs/images/anchor-above.webp) |
+Open `Examples/TabBarDemo/TabBarDemo.xcodeproj` and run the `TabBarDemo` scheme on iOS 18+.
 
 ## License
 

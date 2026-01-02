@@ -14,12 +14,20 @@ let package = Package(
             name: "TabBarMenu",
             targets: ["TabBarMenu"]
         ),
+        .library(
+            name: "TabBarMenuDemoSupport",
+            targets: ["TabBarMenuDemoSupport"]
+        ),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "TabBarMenu"
+        ),
+        .target(
+            name: "TabBarMenuDemoSupport",
+            dependencies: ["TabBarMenu"]
         ),
         .testTarget(
             name: "TabBarMenuTests",
