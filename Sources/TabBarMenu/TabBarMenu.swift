@@ -45,7 +45,7 @@ public struct TabBarMenuConfiguration: Equatable {
 
 /// A delegate that provides contextual menus for a `UITabBarController`.
 ///
-/// Implement either the `UITab`-based callbacks (iOS 18+) or the `UIViewController`-based callbacks,
+/// Implement either the `UITab`-based delegate methods (iOS 18+) or the `UIViewController`-based delegate methods,
 /// depending on how you configure your `UITabBarController`.
 ///
 /// - Important: Return `nil` to disable the menu for a given item.
@@ -173,7 +173,7 @@ public extension TabBarMenuDelegate {
     }
 }
 
-/// Deprecated. Use `TabBarMenuDelegate` and implement the view-controller-based callbacks instead.
+/// Deprecated. Use `TabBarMenuDelegate` and implement the view-controller-based delegate methods instead.
 @available(*, deprecated, message: "Use TabBarMenuDelegate instead.")
 @MainActor public protocol TabBarMenuViewControllerDelegate: TabBarMenuDelegate {}
 
