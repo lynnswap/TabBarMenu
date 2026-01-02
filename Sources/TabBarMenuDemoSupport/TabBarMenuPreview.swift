@@ -25,6 +25,14 @@ private enum PreviewTabDefaults {
 }
 
 @MainActor
+private protocol TabBarMenuPreviewContent: AnyObject {
+    var viewModel: TabBarMenuPreviewViewModel? { get set }
+    func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool)
+}
+
+private typealias TabBarMenuPreviewContentController = UITabBarController & TabBarMenuDelegate & TabBarMenuPreviewContent
+
+@MainActor
 @Observable
 private final class TabBarMenuPreviewViewModel {
     var tabs: [PreviewTab] {
@@ -37,7 +45,7 @@ private final class TabBarMenuPreviewViewModel {
             applyTabs()
         }
     }
-    private var previewController: TabBarMenuPreviewController?
+    private var previewController: TabBarMenuPreviewContentController?
     private weak var containerController: TabBarMenuPreviewContainerController?
     private var currentMode: TabBarMenuPreviewMode?
 
@@ -57,7 +65,13 @@ private final class TabBarMenuPreviewViewModel {
             return
         }
         currentMode = mode
-        let controller = TabBarMenuPreviewController(mode: mode)
+        let controller: TabBarMenuPreviewContentController
+        switch mode {
+        case .uiTab:
+            controller = TabBarMenuPreviewUITabController()
+        case .uiTabBarItem:
+            controller = TabBarMenuPreviewViewControllerController()
+        }
         previewController = controller
         configure(controller)
         controller.applyPreviewTabs(tabs, showsSearchTab: isSearchTabEnabled)
@@ -94,7 +108,7 @@ private final class TabBarMenuPreviewViewModel {
         previewController?.applyPreviewTabs(tabs, showsSearchTab: isSearchTabEnabled)
     }
 
-    private func configure(_ controller: TabBarMenuPreviewController) {
+    private func configure(_ controller: TabBarMenuPreviewContentController) {
         controller.menuDelegate = controller
         controller.viewModel = self
     }
@@ -106,14 +120,16 @@ public enum TabBarMenuPreviewMode: String {
 }
 
 @MainActor
-private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuDelegate {
-    var previewMode: TabBarMenuPreviewMode
+private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDelegate, TabBarMenuPreviewContent {
     weak var viewModel: TabBarMenuPreviewViewModel?
-    private var hasAppliedContent = false
+    fileprivate var hasAppliedContent = false
 
-    init(mode: TabBarMenuPreviewMode) {
-        self.previewMode = mode
-        super.init(nibName: nil, bundle: nil)
+    override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
+        super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
+    }
+
+    convenience init() {
+        self.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
@@ -122,93 +138,7 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
     }
 
     func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool) {
-        switch previewMode {
-        case .uiTab:
-            var updatedTabs = previewTabs.map { makeUITab($0) }
-            if showsSearchTab {
-                updatedTabs.append(makeSearchUITab())
-            }
-            let shouldAnimate = hasAppliedContent
-            setTabs(updatedTabs, animated: shouldAnimate)
-            hasAppliedContent = true
-        case .uiTabBarItem:
-            var updatedViewControllers = previewTabs.map { makeViewController($0) }
-            if showsSearchTab {
-                updatedViewControllers.append(makeSearchViewController())
-            }
-            let shouldAnimate = hasAppliedContent
-            setViewControllers(updatedViewControllers, animated: shouldAnimate)
-            hasAppliedContent = true
-        }
-    }
-
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        tab: UITab?
-    ) -> UIMenu? {
-        guard let tab else {
-            return nil
-        }
-        return makeMenu(title: tab.title) { [weak self] in
-            self?.viewModel?.deleteTab(tab)
-        }
-    }
-
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        viewController: UIViewController?
-    ) -> UIMenu? {
-        guard let viewController else {
-            return nil
-        }
-        let title = viewController.title ?? viewController.tabBarItem.title ?? ""
-        return makeMenu(title: title) { [weak self] in
-            self?.viewModel?.deleteTab(viewController)
-        }
-    }
-
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        menuForMoreTabWith tabs: [UITab]
-    ) -> UIMenu? {
-        guard !tabs.isEmpty else {
-            return nil
-        }
-        let actions = tabs.map { tab in
-            let title = tab.title.isEmpty ? "Untitled" : tab.title
-            return UIAction(title: title, image: tab.image) { [weak tab] _ in
-                guard let tab ,let tabBarController = tab.tabBarController else {
-                    return
-                }
-                if !tabBarController.moreNavigationController.navigationBar.isHidden{
-                    tabBarController.moreNavigationController.navigationBar.isHidden = true
-                }
-                tabBarController.selectedTab = tab
-            }
-        }
-        return UIMenu(children: actions)
-    }
-
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        menuForMoreTabWith viewControllers: [UIViewController]
-    ) -> UIMenu? {
-        guard !viewControllers.isEmpty else {
-            return nil
-        }
-        let actions = viewControllers.map { viewController in
-            let title = viewController.title ?? viewController.tabBarItem.title ?? "Untitled"
-            return UIAction(title: title, image: viewController.tabBarItem.image) { [weak viewController] _ in
-                guard let viewController, let tabBarController = viewController.tabBarController else {
-                    return
-                }
-                if !tabBarController.moreNavigationController.navigationBar.isHidden{
-                    tabBarController.moreNavigationController.navigationBar.isHidden = true
-                }
-                tabBarController.selectedViewController = viewController
-            }
-        }
-        return UIMenu(children: actions)
+        preconditionFailure("Override in subclass.")
     }
 
     func tabBarController(
@@ -233,7 +163,7 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
         return nil
     }
 
-    private func makeMenu(title: String, deleteHandler: @escaping () -> Void) -> UIMenu {
+    fileprivate func makeMenu(title: String, deleteHandler: @escaping () -> Void) -> UIMenu {
         let rename = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in }
         let delete = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
             deleteHandler()
@@ -241,7 +171,7 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
         return UIMenu(title: title, children: [rename, delete])
     }
 
-    private func makeUITab(_ tab: PreviewTab) -> UITab {
+    fileprivate func makeUITab(_ tab: PreviewTab) -> UITab {
         UITab(title: tab.title, image: UIImage(systemName: tab.systemImageName), identifier: tab.identifier) { _ in
             let controller = UIHostingController(
                 rootView: SampleTabView(title: tab.title, systemImage: tab.systemImageName)
@@ -251,7 +181,7 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
         }
     }
 
-    private func makeSearchUITab() -> UISearchTab {
+    fileprivate func makeSearchUITab() -> UISearchTab {
         UISearchTab { _ in
             let controller = UIHostingController(
                 rootView: SampleTabView(title: "Search", systemImage: "magnifyingglass")
@@ -261,7 +191,7 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
         }
     }
 
-    private func makeViewController(_ tab: PreviewTab) -> UIViewController {
+    fileprivate func makeViewController(_ tab: PreviewTab) -> UIViewController {
         let controller = UIHostingController(
             rootView: SampleTabView(title: tab.title, systemImage: tab.systemImageName)
         )
@@ -275,13 +205,108 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
         return controller
     }
 
-    private func makeSearchViewController() -> UIViewController {
+    fileprivate func makeSearchViewController() -> UIViewController {
         let controller = UIHostingController(
             rootView: SampleTabView(title: "Search", systemImage: "magnifyingglass")
         )
         controller.title = "Search"
         controller.tabBarItem = UITabBarItem(tabBarSystemItem: .search, tag: 0)
         return controller
+    }
+}
+
+@MainActor
+private final class TabBarMenuPreviewUITabController: TabBarMenuPreviewBaseController {
+    override func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool) {
+        var updatedTabs = previewTabs.map { makeUITab($0) }
+        if showsSearchTab {
+            updatedTabs.append(makeSearchUITab())
+        }
+        let shouldAnimate = hasAppliedContent
+        setTabs(updatedTabs, animated: shouldAnimate)
+        hasAppliedContent = true
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        tab: UITab?
+    ) -> UIMenu? {
+        guard let tab else {
+            return nil
+        }
+        return makeMenu(title: tab.title) { [weak self] in
+            self?.viewModel?.deleteTab(tab)
+        }
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        menuForMoreTabWith tabs: [UITab]
+    ) -> UIMenu? {
+        guard !tabs.isEmpty else {
+            return nil
+        }
+        let actions = tabs.map { tab in
+            let title = tab.title.isEmpty ? "Untitled" : tab.title
+            return UIAction(title: title, image: tab.image) { [weak tab] _ in
+                guard let tab ,let tabBarController = tab.tabBarController else {
+                    return
+                }
+                if !tabBarController.moreNavigationController.navigationBar.isHidden{
+                    tabBarController.moreNavigationController.navigationBar.isHidden = true
+                }
+                tabBarController.selectedTab = tab
+            }
+        }
+        return UIMenu(children: actions)
+    }
+}
+
+@MainActor
+private final class TabBarMenuPreviewViewControllerController: TabBarMenuPreviewBaseController {
+    override func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool) {
+        var updatedViewControllers = previewTabs.map { makeViewController($0) }
+        if showsSearchTab {
+            updatedViewControllers.append(makeSearchViewController())
+        }
+        let shouldAnimate = hasAppliedContent
+        setViewControllers(updatedViewControllers, animated: shouldAnimate)
+        hasAppliedContent = true
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        viewController: UIViewController?
+    ) -> UIMenu? {
+        guard let viewController else {
+            return nil
+        }
+        let title = viewController.title ?? viewController.tabBarItem.title ?? ""
+        return makeMenu(title: title) { [weak self] in
+            self?.viewModel?.deleteTab(viewController)
+        }
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        menuForMoreTabWith viewControllers: [UIViewController]
+    ) -> UIMenu? {
+        guard !viewControllers.isEmpty else {
+            return nil
+        }
+        let actions = viewControllers.map { viewController in
+            let title = viewController.title ?? viewController.tabBarItem.title ?? "Untitled"
+            return UIAction(title: title, image: viewController.tabBarItem.image) { [weak viewController] _ in
+                guard let viewController, let tabBarController = viewController.tabBarController else {
+                    return
+                }
+                if !tabBarController.moreNavigationController.navigationBar.isHidden{
+                    tabBarController.moreNavigationController.navigationBar.isHidden = true
+                }
+                tabBarController.selectedViewController = viewController
+            }
+        }
+        return UIMenu(children: actions)
     }
 }
 
