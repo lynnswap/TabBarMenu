@@ -116,7 +116,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
                 return true
             }
             // Return false to cancel system selection when we presented a More menu.
-            return self.handleMoreSelection(.item(item), in: tabBarController, request: request) == false
+            return self.handleMoreSelection(item, in: tabBarController, request: request) == false
         }
     }
 
@@ -209,21 +209,36 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         request: ItemMenuRequest,
         delegate: TabBarMenuDelegate
     ) -> MenuPlan? {
-        guard let resolution = request.resolveMenu(
-            for: tabIndex,
-            in: tabBarController,
-            delegate: delegate
-        ) else {
-            return nil
+        switch request {
+        case .tabs(let requestContext):
+            guard let tab = requestContext.itemForMenu(at: tabIndex, in: tabBarController),
+                  let menu = delegate.tabBarController?(tabBarController, tab: tab) else {
+                return nil
+            }
+            let hostButton = makeMenuHostButton(in: context.containerView)
+            let placement = delegate.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: tab,
+                tabFrame: context.tabFrame,
+                in: context.containerView,
+                menuHostButton: hostButton
+            )
+            return MenuPlan(menu: menu, placement: placement, hostButton: hostButton)
+        case .viewControllers(let requestContext):
+            guard let viewController = requestContext.itemForMenu(at: tabIndex, in: tabBarController),
+                  let menu = delegate.tabBarController?(tabBarController, viewController: viewController) else {
+                return nil
+            }
+            let hostButton = makeMenuHostButton(in: context.containerView)
+            let placement = delegate.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: viewController,
+                tabFrame: context.tabFrame,
+                in: context.containerView,
+                menuHostButton: hostButton
+            )
+            return MenuPlan(menu: menu, placement: placement, hostButton: hostButton)
         }
-        let hostButton = makeMenuHostButton(in: context.containerView)
-        let placement = resolution.target.placement(
-            in: tabBarController,
-            context: context,
-            hostButton: hostButton,
-            delegate: delegate
-        )
-        return MenuPlan(menu: resolution.menu, placement: placement, hostButton: hostButton)
     }
 
     private func presentPlannedMenu(_ plan: MenuPlan, context: PresentationContext, sourceView: UIView) {
@@ -429,14 +444,14 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     private func handleMoreSelection(
-        _ selection: MoreSelection,
+        _ item: UITabBarItem,
         in tabBarController: UITabBarController,
         request: MoreMenuRequest? = nil
     ) -> Bool {
         guard let request = request ?? moreMenuRequest(using: makeRequestCore()) else {
             return false
         }
-        guard request.matches(selection, in: tabBarController) else {
+        guard request.matches(item: item, in: tabBarController) else {
             return false
         }
         return presentMoreMenu(request: request, in: tabBarController)

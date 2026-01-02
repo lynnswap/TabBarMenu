@@ -1,18 +1,6 @@
 import UIKit
 
 @MainActor
-enum ItemMenuTarget {
-    case tab(UITab)
-    case viewController(UIViewController)
-}
-
-@MainActor
-struct ItemMenuResolution {
-    let menu: UIMenu
-    let target: ItemMenuTarget
-}
-
-@MainActor
 struct PresentationContext {
     let containerView: UIView
     let tabFrame: CGRect
@@ -230,55 +218,6 @@ extension MoreMenuRequest {
 enum ItemMenuRequest {
     case tabs(TabBarMenuTabRequestContext)
     case viewControllers(TabBarMenuViewControllerRequestContext)
-
-    func resolveMenu(
-        for tabIndex: Int,
-        in tabBarController: UITabBarController,
-        delegate: TabBarMenuDelegate
-    ) -> ItemMenuResolution? {
-        switch self {
-        case .tabs(let requestContext):
-            guard let tab = requestContext.itemForMenu(at: tabIndex, in: tabBarController),
-                  let menu = delegate.tabBarController?(tabBarController, tab: tab) else {
-                return nil
-            }
-            return ItemMenuResolution(menu: menu, target: .tab(tab))
-        case .viewControllers(let requestContext):
-            guard let viewController = requestContext.itemForMenu(at: tabIndex, in: tabBarController),
-                  let menu = delegate.tabBarController?(tabBarController, viewController: viewController) else {
-                return nil
-            }
-            return ItemMenuResolution(menu: menu, target: .viewController(viewController))
-        }
-    }
-}
-
-extension ItemMenuTarget {
-    func placement(
-        in tabBarController: UITabBarController,
-        context: PresentationContext,
-        hostButton: UIButton,
-        delegate: TabBarMenuPresentationDelegate
-    ) -> TabBarMenuAnchorPlacement? {
-        switch self {
-        case .tab(let tab):
-            return delegate.tabBarController(
-                tabBarController,
-                configureMenuPresentationFor: tab,
-                tabFrame: context.tabFrame,
-                in: context.containerView,
-                menuHostButton: hostButton
-            )
-        case .viewController(let viewController):
-            return delegate.tabBarController(
-                tabBarController,
-                configureMenuPresentationFor: viewController,
-                tabFrame: context.tabFrame,
-                in: context.containerView,
-                menuHostButton: hostButton
-            )
-        }
-    }
 }
 
 extension ItemMenuRequest {
