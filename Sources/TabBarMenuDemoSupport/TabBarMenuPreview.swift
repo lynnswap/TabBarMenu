@@ -143,7 +143,7 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
 
     func tabBarController(
         _ tabBarController: UITabBarController,
-        configureMenuPresentationFor tab: UITab,
+        configureMenuPresentationFor tab: UITab?,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton
@@ -154,7 +154,7 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
 
     func tabBarController(
         _ tabBarController: UITabBarController,
-        configureMenuPresentationFor viewController: UIViewController,
+        configureMenuPresentationFor viewController: UIViewController?,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton

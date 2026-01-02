@@ -192,6 +192,33 @@ enum MoreMenuRequest {
             return context.core.isMoreTabIndex(index, totalCount: context.totalCount(in: tabBarController))
         }
     }
+
+    func menuPresentationPlacement(
+        in tabBarController: UITabBarController,
+        presentationContext: PresentationContext,
+        hostButton: UIButton,
+        delegate: TabBarMenuDelegate
+    ) -> TabBarMenuAnchorPlacement? {
+        // More tabs pass nil to match the content delegate semantics.
+        switch self {
+        case .tabs:
+            return delegate.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: (nil as UITab?),
+                tabFrame: presentationContext.tabFrame,
+                in: presentationContext.containerView,
+                menuHostButton: hostButton
+            )
+        case .viewControllers:
+            return delegate.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: (nil as UIViewController?),
+                tabFrame: presentationContext.tabFrame,
+                in: presentationContext.containerView,
+                menuHostButton: hostButton
+            )
+        }
+    }
 }
 
 extension MoreMenuRequest {
@@ -221,6 +248,58 @@ enum ItemMenuRequest {
 }
 
 extension ItemMenuRequest {
+    func menu(
+        forItemAt index: Int,
+        in tabBarController: UITabBarController,
+        delegate: TabBarMenuDelegate
+    ) -> UIMenu? {
+        switch self {
+        case .tabs(let requestContext):
+            guard let tab = requestContext.itemForMenu(at: index, in: tabBarController) else {
+                return nil
+            }
+            return delegate.tabBarController?(tabBarController, tab: tab)
+        case .viewControllers(let requestContext):
+            guard let viewController = requestContext.itemForMenu(at: index, in: tabBarController) else {
+                return nil
+            }
+            return delegate.tabBarController?(tabBarController, viewController: viewController)
+        }
+    }
+
+    func menuPresentationPlacement(
+        forItemAt index: Int,
+        in tabBarController: UITabBarController,
+        presentationContext: PresentationContext,
+        hostButton: UIButton,
+        delegate: TabBarMenuDelegate
+    ) -> TabBarMenuAnchorPlacement? {
+        switch self {
+        case .tabs(let requestContext):
+            guard let tab = requestContext.itemForMenu(at: index, in: tabBarController) else {
+                return nil
+            }
+            return delegate.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: tab,
+                tabFrame: presentationContext.tabFrame,
+                in: presentationContext.containerView,
+                menuHostButton: hostButton
+            )
+        case .viewControllers(let requestContext):
+            guard let viewController = requestContext.itemForMenu(at: index, in: tabBarController) else {
+                return nil
+            }
+            return delegate.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: viewController,
+                tabFrame: presentationContext.tabFrame,
+                in: presentationContext.containerView,
+                menuHostButton: hostButton
+            )
+        }
+    }
+
     static func make(delegate: TabBarMenuDelegate?, core: TabBarMenuRequestCore) -> ItemMenuRequest? {
         guard let delegate else {
             return nil
