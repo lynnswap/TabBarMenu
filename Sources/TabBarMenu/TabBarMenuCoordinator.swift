@@ -3,9 +3,20 @@ import Combine
 
 @MainActor
 final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
-    private enum MenuSource {
+    private enum MenuSource: CaseIterable {
         case tabs
         case viewControllers
+    }
+
+    private struct PresentationContext {
+        let containerView: UIView
+        let tabFrame: CGRect
+    }
+
+    private struct MenuPlan {
+        let menu: UIMenu
+        let placement: TabBarMenuAnchorPlacement?
+        let hostButton: UIButton
     }
 
     weak var delegate: TabBarMenuDelegate?
@@ -15,12 +26,13 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             refreshInteractions()
         }
     }
+
     private weak var tabBarController: UITabBarController?
     private var menuHostButton: UIButton?
     private var cancellables = Set<AnyCancellable>()
 
     @MainActor deinit {
-        stopObservingTabs()
+        detach()
     }
 
     func attach(to tabBarController: UITabBarController) {
@@ -53,10 +65,11 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     func refreshInteractions() {
-        guard let tabBarController = tabBarController else {
+        guard let tabBarController else {
             return
         }
         refreshSelectionHandler()
+
         let tabBar = tabBarController.tabBar
         removeMenuGestures(from: tabBar)
         for (index, view) in tabBarIndexedViews(in: tabBar) {
@@ -72,13 +85,15 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
         let updatedMenu = update(menuHostButton.menu)
         menuHostButton.menu = updatedMenu
-        if let updatedMenu{
+        if let updatedMenu {
             menuHostButton.contextMenuInteraction?.updateVisibleMenu { _ in
                 updatedMenu
             }
         }
         return true
     }
+
+    // MARK: - Observation
 
     private func startObservingTabs() {
         guard let tabBarController = tabBarController, cancellables.isEmpty else {
@@ -97,6 +112,8 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         cancellables.removeAll()
     }
 
+    // MARK: - Selection handling
+
     private func refreshSelectionHandler() {
         guard let tabBarController else {
             return
@@ -104,6 +121,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         let tabBar = tabBarController.tabBar
         tabBar.tabBarMenuSelectionHandler = { [weak self, weak tabBarController] _, item in
             guard let self, let tabBarController else { return true }
+            // Return false to cancel system selection when we presented a More menu.
             return self.handleMoreSelection(item, in: tabBarController) == false
         }
     }
@@ -111,6 +129,8 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private func uninstallSelectionHandler(from tabBarController: UITabBarController) {
         tabBarController.tabBar.tabBarMenuSelectionHandler = nil
     }
+
+    // MARK: - Gestures
 
     private func addLongPress(to view: UIView, tabIndex: Int, minimumPressDuration: TimeInterval) {
         let recognizer = TabBarMenuLongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
@@ -126,13 +146,81 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             guard let recognizers = control.gestureRecognizers else {
                 continue
             }
-            for recognizer in recognizers {
-                guard recognizer is TabBarMenuLongPressGestureRecognizer else {
-                    continue
-                }
+            for recognizer in recognizers where recognizer is TabBarMenuLongPressGestureRecognizer {
                 control.removeGestureRecognizer(recognizer)
             }
         }
+    }
+
+    // MARK: - Menu presentation
+
+    private func makePresentationContext(for sourceView: UIView, in tabBarController: UITabBarController) -> PresentationContext? {
+        guard let containerView = tabBarController.view ?? sourceView.window?.rootViewController?.view else {
+            return nil
+        }
+        let tabFrame = sourceView.convert(sourceView.bounds, to: containerView)
+        return PresentationContext(containerView: containerView, tabFrame: tabFrame)
+    }
+
+    private func makeMenuPlan(
+        for tabIndex: Int,
+        in tabBarController: UITabBarController,
+        context: PresentationContext
+    ) -> MenuPlan? {
+        // 1) Prefer the system More tab menu for tabs.
+        if isMoreTabIndex(tabIndex, in: tabBarController, source: .tabs),
+           let menu = menuForMoreTab(in: tabBarController, source: .tabs) {
+            let hostButton = makeMenuHostButton(in: context.containerView)
+            return MenuPlan(menu: menu, placement: nil, hostButton: hostButton)
+        }
+
+        // 2) Prefer the system More tab menu for view controllers.
+        if isMoreTabIndex(tabIndex, in: tabBarController, source: .viewControllers),
+           let menu = menuForMoreTab(in: tabBarController, source: .viewControllers) {
+            let hostButton = makeMenuHostButton(in: context.containerView)
+            return MenuPlan(menu: menu, placement: nil, hostButton: hostButton)
+        }
+
+        // 3) Per-item menu using UITab (iOS 18+ API).
+        if let tab = tabForMenu(at: tabIndex, in: tabBarController),
+           let menu = delegate?.tabBarController(tabBarController, tab: tab) {
+            let hostButton = makeMenuHostButton(in: context.containerView)
+            let placement = delegate?.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: tab,
+                tabFrame: context.tabFrame,
+                in: context.containerView,
+                menuHostButton: hostButton
+            )
+            return MenuPlan(menu: menu, placement: placement, hostButton: hostButton)
+        }
+
+        // 4) Per-item menu using UIViewController API.
+        if let viewController = viewControllerForMenu(at: tabIndex, in: tabBarController),
+           let menu = delegate?.tabBarController(tabBarController, viewController: viewController) {
+            let hostButton = makeMenuHostButton(in: context.containerView)
+            let placement = delegate?.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: viewController,
+                tabFrame: context.tabFrame,
+                in: context.containerView,
+                menuHostButton: hostButton
+            )
+            return MenuPlan(menu: menu, placement: placement, hostButton: hostButton)
+        }
+
+        return nil
+    }
+
+    private func presentPlannedMenu(_ plan: MenuPlan, context: PresentationContext, sourceView: UIView) {
+        presentMenu(
+            plan.menu,
+            tabFrame: context.tabFrame,
+            in: context.containerView,
+            placement: plan.placement,
+            hostButton: plan.hostButton,
+            sourceView: sourceView
+        )
     }
 
     private func presentMenu(from button: UIButton) {
@@ -142,7 +230,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private func presentMenu(
         _ menu: UIMenu,
         tabFrame: CGRect,
-        in containerView: UIView,
+        in _: UIView,
         placement: TabBarMenuAnchorPlacement?,
         hostButton: UIButton,
         sourceView: UIView
@@ -153,10 +241,11 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             }
             return .above()
         }()
+
         let anchorPoint: CGPoint?
         switch placement ?? defaultPlacement {
         case .inside:
-            anchorPoint = CGPoint(x: tabFrame.midX, y: ( tabFrame.maxY + tabFrame.midY) * 0.5 )
+            anchorPoint = CGPoint(x: tabFrame.midX, y: (tabFrame.maxY + tabFrame.midY) * 0.5)
         case .above(let offset):
             anchorPoint = CGPoint(x: tabFrame.midX, y: tabFrame.minY - offset)
         case .custom(let point):
@@ -164,6 +253,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         case .manual:
             anchorPoint = nil
         }
+
         if let anchorPoint {
             let anchorSize: CGFloat = 2
             hostButton.frame = CGRect(
@@ -173,6 +263,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
                 height: anchorSize
             )
         }
+
         hostButton.menu = menu
         presentMenu(from: hostButton)
         cancelTabBarTracking(for: sourceView)
@@ -194,6 +285,8 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
     }
 
+    // MARK: - Tab bar view discovery
+
     private func tabBarControls(in view: UIView) -> [UIControl] {
         var result: [UIControl] = []
         for subview in view.subviews {
@@ -209,19 +302,27 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard let items = tabBar.items, !items.isEmpty else {
             return []
         }
+
         let indexedViews = items.enumerated().compactMap { index, item in
             tabBarItemView(item).map { (index, $0) }
         }
         if indexedViews.count == items.count {
             return indexedViews
         }
+
         let controls = tabBarFallbackControls(in: tabBar)
         guard !controls.isEmpty else {
             return indexedViews
         }
+
+        let isRTL = tabBar.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        // Match the visual order so indices align with items in RTL.
         let sortedControls = controls.sorted { left, right in
             let leftFrame = left.convert(left.bounds, to: tabBar)
             let rightFrame = right.convert(right.bounds, to: tabBar)
+            if isRTL {
+                return leftFrame.minX > rightFrame.minX
+            }
             return leftFrame.minX < rightFrame.minX
         }
         let count = min(sortedControls.count, items.count)
@@ -241,13 +342,17 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
 
     private func makeMenuHostButton(in containerView: UIView) -> UIButton {
         menuHostButton?.removeFromSuperview()
+
         let button = MenuHostButton(type: .custom)
         button.backgroundColor = .clear
         button.showsMenuAsPrimaryAction = true
         containerView.addSubview(button)
+
         menuHostButton = button
         return button
     }
+
+    // MARK: - More tab indexing & item extraction
 
     private func totalCount(in tabBarController: UITabBarController, source: MenuSource) -> Int {
         switch source {
@@ -266,6 +371,10 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return maxVisibleCount - 1
     }
 
+    private func moreTabIndex(in tabBarController: UITabBarController, source: MenuSource) -> Int? {
+        moreTabStartIndex(totalCount: totalCount(in: tabBarController, source: source))
+    }
+
     private func isMoreTabIndex(_ index: Int, totalCount: Int) -> Bool {
         guard let startIndex = moreTabStartIndex(totalCount: totalCount) else {
             return false
@@ -281,12 +390,25 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     private func longPressDuration(for _: Int, in _: UITabBarController) -> TimeInterval {
-        return configuration.minimumPressDuration
+        configuration.minimumPressDuration
     }
 
-    private func moreTabIndex(in tabBarController: UITabBarController, source: MenuSource) -> Int? {
-        let totalCount = totalCount(in: tabBarController, source: source)
-        return moreTabStartIndex(totalCount: totalCount)
+    private func itemForMenu<T>(at index: Int, in items: [T]) -> T? {
+        guard !items.isEmpty else {
+            return nil
+        }
+        guard items.indices.contains(index), isMoreTabIndex(index, totalCount: items.count) == false else {
+            return nil
+        }
+        return items[index]
+    }
+
+    private func moreItems<T>(from items: [T]) -> [T] {
+        guard let startIndex = moreTabStartIndex(totalCount: items.count),
+              items.indices.contains(startIndex) else {
+            return []
+        }
+        return Array(items[startIndex...])
     }
 
     private func moreTabView(in tabBarController: UITabBarController, source: MenuSource) -> UIView? {
@@ -321,73 +443,41 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         if let index = tabs.firstIndex(where: { $0 === tab }) {
             return index == moreIndex
         }
+        // If we can't find it, be conservative and treat it as the More tab.
         return true
     }
 
     private func tabForMenu(at index: Int, in tabBarController: UITabBarController) -> UITab? {
-        let tabs = tabBarController.tabs
-        if isMoreTabIndex(index, totalCount: tabs.count) {
-            return nil
-        }
-        guard tabs.indices.contains(index) else {
-            return nil
-        }
-        return tabs[index]
+        itemForMenu(at: index, in: tabBarController.tabs)
     }
 
     private func viewControllerForMenu(at index: Int, in tabBarController: UITabBarController) -> UIViewController? {
-        guard let viewControllers = tabBarController.viewControllers, !viewControllers.isEmpty else {
-            return nil
-        }
-        if isMoreTabIndex(index, totalCount: viewControllers.count) {
-            return nil
-        }
-        guard viewControllers.indices.contains(index) else {
-            return nil
-        }
-        return viewControllers[index]
-    }
-
-    private func moreTabs(in tabBarController: UITabBarController) -> [UITab] {
-        let tabs = tabBarController.tabs
-        guard let startIndex = moreTabStartIndex(totalCount: tabs.count) else {
-            return []
-        }
-        guard tabs.indices.contains(startIndex) else {
-            return []
-        }
-        return Array(tabs[startIndex...])
-    }
-
-    private func moreViewControllers(in tabBarController: UITabBarController) -> [UIViewController] {
-        guard let viewControllers = tabBarController.viewControllers, !viewControllers.isEmpty else {
-            return []
-        }
-        guard let startIndex = moreTabStartIndex(totalCount: viewControllers.count) else {
-            return []
-        }
-        guard viewControllers.indices.contains(startIndex) else {
-            return []
-        }
-        return Array(viewControllers[startIndex...])
+        itemForMenu(at: index, in: tabBarController.viewControllers ?? [])
     }
 
     private func menuForMoreTab(in tabBarController: UITabBarController, source: MenuSource) -> UIMenu? {
+        guard let delegate else {
+            return nil
+        }
+
         switch source {
         case .tabs:
-            let tabs = moreTabs(in: tabBarController)
+            let tabs = moreItems(from: tabBarController.tabs)
             guard !tabs.isEmpty else {
                 return nil
             }
-            return delegate?.tabBarController(tabBarController, menuForMoreTabWith: tabs)
+            return delegate.tabBarController(tabBarController, menuForMoreTabWith: tabs)
+
         case .viewControllers:
-            let viewControllers = moreViewControllers(in: tabBarController)
+            let viewControllers = moreItems(from: tabBarController.viewControllers ?? [])
             guard !viewControllers.isEmpty else {
                 return nil
             }
-            return delegate?.tabBarController(tabBarController, menuForMoreTabWith: viewControllers)
+            return delegate.tabBarController(tabBarController, menuForMoreTabWith: viewControllers)
         }
     }
+
+    // MARK: - More tab selection
 
     private func presentMenuForMoreTab(
         _ menu: UIMenu,
@@ -395,15 +485,15 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         in tabBarController: UITabBarController
     ) -> Bool {
         guard let sourceView = moreTabView(in: tabBarController, source: source),
-              let containerView = tabBarController.view ?? sourceView.window?.rootViewController?.view else {
+              let context = makePresentationContext(for: sourceView, in: tabBarController) else {
             return false
         }
-        let tabFrame = sourceView.convert(sourceView.bounds, to: containerView)
-        let hostButton = makeMenuHostButton(in: containerView)
+
+        let hostButton = makeMenuHostButton(in: context.containerView)
         presentMenu(
             menu,
-            tabFrame: tabFrame,
-            in: containerView,
+            tabFrame: context.tabFrame,
+            in: context.containerView,
             placement: nil,
             hostButton: hostButton,
             sourceView: sourceView
@@ -411,31 +501,34 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return true
     }
 
+    private func presentMoreMenu(source: MenuSource, in tabBarController: UITabBarController) -> Bool {
+        guard let menu = menuForMoreTab(in: tabBarController, source: source) else {
+            return false
+        }
+        return presentMenuForMoreTab(menu, source: source, in: tabBarController)
+    }
+
     fileprivate func handleMoreSelection(_ viewController: UIViewController, in tabBarController: UITabBarController) -> Bool {
         guard isMoreViewController(viewController, in: tabBarController) else {
             return false
         }
-        guard let menu = menuForMoreTab(in: tabBarController, source: .viewControllers) else {
-            return false
-        }
-        return presentMenuForMoreTab(menu, source: .viewControllers, in: tabBarController)
+        return presentMoreMenu(source: .viewControllers, in: tabBarController)
     }
 
     fileprivate func handleMoreSelection(_ tab: UITab, in tabBarController: UITabBarController) -> Bool {
         guard isMoreTab(tab, in: tabBarController) else {
             return false
         }
-        guard let menu = menuForMoreTab(in: tabBarController, source: .tabs) else {
-            return false
-        }
-        return presentMenuForMoreTab(menu, source: .tabs, in: tabBarController)
+        return presentMoreMenu(source: .tabs, in: tabBarController)
     }
 
     fileprivate func handleMoreSelection(_ item: UITabBarItem, in tabBarController: UITabBarController) -> Bool {
-        if handleMoreSelection(item, in: tabBarController, source: .tabs) {
-            return true
+        for source in MenuSource.allCases {
+            if handleMoreSelection(item, in: tabBarController, source: source) {
+                return true
+            }
         }
-        return handleMoreSelection(item, in: tabBarController, source: .viewControllers)
+        return false
     }
 
     private func handleMoreSelection(
@@ -448,97 +541,39 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
               isMoreTabIndex(index, in: tabBarController, source: source) else {
             return false
         }
-        guard let menu = menuForMoreTab(in: tabBarController, source: source) else {
-            return false
-        }
-        return presentMenuForMoreTab(menu, source: source, in: tabBarController)
+        return presentMoreMenu(source: source, in: tabBarController)
     }
 
+    // MARK: - Long press
+
     private func handleMenuTrigger(tabIndex: Int, sourceView: UIView, in tabBarController: UITabBarController) {
-        guard let containerView = tabBarController.view ?? sourceView.window?.rootViewController?.view else {
+        guard let context = makePresentationContext(for: sourceView, in: tabBarController) else {
             return
         }
-        let tabFrame = sourceView.convert(sourceView.bounds, to: containerView)
-        if isMoreTabIndex(tabIndex, in: tabBarController, source: .tabs),
-           let menu = menuForMoreTab(in: tabBarController, source: .tabs) {
-            let hostButton = makeMenuHostButton(in: containerView)
-            presentMenu(
-                menu,
-                tabFrame: tabFrame,
-                in: containerView,
-                placement: nil,
-                hostButton: hostButton,
-                sourceView: sourceView
-            )
+        guard let plan = makeMenuPlan(for: tabIndex, in: tabBarController, context: context) else {
             return
         }
-        if isMoreTabIndex(tabIndex, in: tabBarController, source: .viewControllers),
-           let menu = menuForMoreTab(in: tabBarController, source: .viewControllers) {
-            let hostButton = makeMenuHostButton(in: containerView)
-            presentMenu(
-                menu,
-                tabFrame: tabFrame,
-                in: containerView,
-                placement: nil,
-                hostButton: hostButton,
-                sourceView: sourceView
-            )
-            return
-        }
-        let tab = tabForMenu(at: tabIndex, in: tabBarController)
-        if let tab, let menu = delegate?.tabBarController(tabBarController, tab: tab) {
-            let hostButton = makeMenuHostButton(in: containerView)
-            let placement = delegate?.tabBarController(
-                tabBarController,
-                configureMenuPresentationFor: tab,
-                tabFrame: tabFrame,
-                in: containerView,
-                menuHostButton: hostButton
-            )
-            presentMenu(
-                menu,
-                tabFrame: tabFrame,
-                in: containerView,
-                placement: placement,
-                hostButton: hostButton,
-                sourceView: sourceView
-            )
-            return
-        }
-        let viewController = viewControllerForMenu(at: tabIndex, in: tabBarController)
-        if let viewController, let menu = delegate?.tabBarController(tabBarController, viewController: viewController) {
-            let hostButton = makeMenuHostButton(in: containerView)
-            let placement = delegate?.tabBarController(
-                tabBarController,
-                configureMenuPresentationFor: viewController,
-                tabFrame: tabFrame,
-                in: containerView,
-                menuHostButton: hostButton
-            )
-            presentMenu(
-                menu,
-                tabFrame: tabFrame,
-                in: containerView,
-                placement: placement,
-                hostButton: hostButton,
-                sourceView: sourceView
-            )
-        }
+        presentPlannedMenu(plan, context: context, sourceView: sourceView)
     }
 
     @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
         guard recognizer.state == .began,
               let view = recognizer.view,
-              let tabBarController = tabBarController,
+              let tabBarController,
               let longPressRecognizer = recognizer as? TabBarMenuLongPressGestureRecognizer else {
             return
         }
         handleMenuTrigger(tabIndex: longPressRecognizer.tabIndex, sourceView: view, in: tabBarController)
     }
 
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        return true
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
     }
+
+    // MARK: - Private API helpers
 
     private func tabBarItemView(_ item: UITabBarItem) -> UIView? {
         if let view = performSelector("view", on: item) as? UIView {
@@ -563,6 +598,6 @@ final class TabBarMenuLongPressGestureRecognizer: UILongPressGestureRecognizer {
 
 private final class MenuHostButton: UIButton {
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        return false
+        false
     }
 }
