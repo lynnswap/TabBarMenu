@@ -100,7 +100,7 @@ Implement `configureMenuPresentationFor…` to customize the anchor placement an
 ```swift
 func tabBarController(
     _ tabBarController: UITabBarController,
-    configureMenuPresentationFor tab: UITab,
+    configureMenuPresentationFor tab: UITab?,
     tabFrame: CGRect,
     in containerView: UIView,
     menuHostButton: UIButton
@@ -109,6 +109,8 @@ func tabBarController(
     return .above()
 }
 ```
+
+The `tab` parameter is `nil` for the system More tab.
 
 Available placements:
 

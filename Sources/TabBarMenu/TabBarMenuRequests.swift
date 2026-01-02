@@ -194,33 +194,25 @@ enum MoreMenuRequest {
     }
 
     func menuPresentationPlacement(
-        forMoreTabIndex index: Int,
         in tabBarController: UITabBarController,
         presentationContext: PresentationContext,
         hostButton: UIButton,
         delegate: TabBarMenuDelegate
     ) -> TabBarMenuAnchorPlacement? {
+        // More tabs pass nil to match the content delegate semantics.
         switch self {
-        case .tabs(let requestContext):
-            let tabs = requestContext.items(in: tabBarController)
-            guard tabs.indices.contains(index) else {
-                return nil
-            }
+        case .tabs:
             return delegate.tabBarController(
                 tabBarController,
-                configureMenuPresentationFor: tabs[index],
+                configureMenuPresentationFor: (nil as UITab?),
                 tabFrame: presentationContext.tabFrame,
                 in: presentationContext.containerView,
                 menuHostButton: hostButton
             )
-        case .viewControllers(let requestContext):
-            let viewControllers = requestContext.items(in: tabBarController)
-            guard viewControllers.indices.contains(index) else {
-                return nil
-            }
+        case .viewControllers:
             return delegate.tabBarController(
                 tabBarController,
-                configureMenuPresentationFor: viewControllers[index],
+                configureMenuPresentationFor: (nil as UIViewController?),
                 tabFrame: presentationContext.tabFrame,
                 in: presentationContext.containerView,
                 menuHostButton: hostButton

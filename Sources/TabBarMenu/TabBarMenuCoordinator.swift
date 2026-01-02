@@ -201,7 +201,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
         let hostButton = makeMenuHostButton(in: context.containerView)
         let placement = request.menuPresentationPlacement(
-            forMoreTabIndex: tabIndex,
             in: tabBarController,
             presentationContext: context,
             hostButton: hostButton,
@@ -432,7 +431,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
         let hostButton = makeMenuHostButton(in: presentation.context.containerView)
         let placement = request.menuPresentationPlacement(
-            forMoreTabIndex: presentation.moreTabIndex,
             in: tabBarController,
             presentationContext: presentation.context,
             hostButton: hostButton,

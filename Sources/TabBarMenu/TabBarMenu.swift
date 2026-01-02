@@ -96,7 +96,7 @@ public struct TabBarMenuConfiguration: Equatable {
     /// Asks the delegate to configure menu presentation and anchor placement.
     /// - Parameters:
     ///   - tabBarController: The tab bar controller requesting the anchor placement.
-    ///   - tab: The tab associated with the long-pressed item.
+    ///   - tab: The tab associated with the long-pressed item, or `nil` for the system More tab.
     ///   - tabFrame: The tab bar item frame in `containerView` coordinates.
     ///   - containerView: The view hosting the menu.
     ///   - menuHostButton: The internal button used to present the menu. Configure properties like
@@ -104,7 +104,7 @@ public struct TabBarMenuConfiguration: Equatable {
     /// - Returns: The placement to use, or `nil` to use the default placement.
     func tabBarController(
         _ tabBarController: UITabBarController,
-        configureMenuPresentationFor tab: UITab,
+        configureMenuPresentationFor tab: UITab?,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton
@@ -113,14 +113,14 @@ public struct TabBarMenuConfiguration: Equatable {
     /// Asks the delegate to configure menu presentation and anchor placement.
     /// - Parameters:
     ///   - tabBarController: The tab bar controller requesting the anchor placement.
-    ///   - viewController: The view controller associated with the long-pressed item.
+    ///   - viewController: The view controller associated with the long-pressed item, or `nil` for the system More tab.
     ///   - tabFrame: The tab bar item frame in `containerView` coordinates.
     ///   - containerView: The view hosting the menu.
     ///   - menuHostButton: The internal button used to present the menu.
     /// - Returns: The placement to use, or `nil` to use the default placement.
     func tabBarController(
         _ tabBarController: UITabBarController,
-        configureMenuPresentationFor viewController: UIViewController,
+        configureMenuPresentationFor viewController: UIViewController?,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton
@@ -140,7 +140,7 @@ public struct TabBarMenuConfiguration: Equatable {
 public extension TabBarMenuPresentationDelegate {
     func tabBarController(
         _ tabBarController: UITabBarController,
-        configureMenuPresentationFor tab: UITab,
+        configureMenuPresentationFor tab: UITab?,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton
@@ -150,7 +150,7 @@ public extension TabBarMenuPresentationDelegate {
 
     func tabBarController(
         _ tabBarController: UITabBarController,
-        configureMenuPresentationFor viewController: UIViewController,
+        configureMenuPresentationFor viewController: UIViewController?,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton

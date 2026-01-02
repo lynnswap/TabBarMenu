@@ -61,7 +61,7 @@ private final class DualMoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
 
 @MainActor
 private final class MoreTabPresentationDelegate: NSObject, TabBarMenuDelegate {
-    private(set) var configuredTabs: [UITab] = []
+    private(set) var configuredTabs: [UITab?] = []
     private let menu: UIMenu
 
     init(menu: UIMenu = UIMenu(children: [])) {
@@ -74,7 +74,7 @@ private final class MoreTabPresentationDelegate: NSObject, TabBarMenuDelegate {
 
     func tabBarController(
         _ tabBarController: UITabBarController,
-        configureMenuPresentationFor tab: UITab,
+        configureMenuPresentationFor tab: UITab?,
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton
@@ -635,9 +635,9 @@ func moreTabSelectionSuppressesDefaultWhenMenuIsProvided() async {
     #expect(delegate.requestedTabsCount == 1)
 }
 
-@Test("more tab selection configures menu presentation")
+@Test("more tab selection configures menu presentation with nil")
 @MainActor
-func moreTabSelectionConfiguresMenuPresentation() async {
+func moreTabSelectionConfiguresMenuPresentationWithNil() async {
     let context = makeTabBarTestContext(tabCount: 6)
     let delegate = MoreTabPresentationDelegate(menu: UIMenu(children: []))
 
@@ -653,9 +653,10 @@ func moreTabSelectionConfiguresMenuPresentation() async {
         _ = handler(context.controller.tabBar, moreItem)
     }
 
-    let expectedIndex = context.controller.menuConfiguration.maxVisibleTabCount - 1
     #expect(delegate.configuredTabs.count == 1)
-    #expect(delegate.configuredTabs.first === context.tabs[expectedIndex])
+    if let configuredTab = delegate.configuredTabs.first {
+        #expect(configuredTab == nil)
+    }
 }
 
 @Test("coordinator reattaches to a different tab bar controller")
