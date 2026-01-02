@@ -60,6 +60,31 @@ private final class DualMoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
 }
 
 @MainActor
+private final class MoreTabPresentationDelegate: NSObject, TabBarMenuDelegate {
+    private(set) var configuredTabs: [UITab] = []
+    private let menu: UIMenu
+
+    init(menu: UIMenu = UIMenu(children: [])) {
+        self.menu = menu
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+        menu
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        configureMenuPresentationFor tab: UITab,
+        tabFrame: CGRect,
+        in containerView: UIView,
+        menuHostButton: UIButton
+    ) -> TabBarMenuAnchorPlacement? {
+        configuredTabs.append(tab)
+        return nil
+    }
+}
+
+@MainActor
 private final class ViewControllerMenuDelegate: NSObject, TabBarMenuDelegate {
     private(set) var requestedTitles: [String?] = []
     private let menu: UIMenu
@@ -608,6 +633,29 @@ func moreTabSelectionSuppressesDefaultWhenMenuIsProvided() async {
         #expect(shouldCallDefault == false)
     }
     #expect(delegate.requestedTabsCount == 1)
+}
+
+@Test("more tab selection configures menu presentation")
+@MainActor
+func moreTabSelectionConfiguresMenuPresentation() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabPresentationDelegate(menu: UIMenu(children: []))
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(handler != nil)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+    if let handler, let moreItem {
+        _ = handler(context.controller.tabBar, moreItem)
+    }
+
+    let expectedIndex = context.controller.menuConfiguration.maxVisibleTabCount - 1
+    #expect(delegate.configuredTabs.count == 1)
+    #expect(delegate.configuredTabs.first === context.tabs[expectedIndex])
 }
 
 @Test("coordinator reattaches to a different tab bar controller")

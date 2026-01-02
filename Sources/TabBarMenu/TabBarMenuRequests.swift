@@ -192,6 +192,41 @@ enum MoreMenuRequest {
             return context.core.isMoreTabIndex(index, totalCount: context.totalCount(in: tabBarController))
         }
     }
+
+    func menuPresentationPlacement(
+        forMoreTabIndex index: Int,
+        in tabBarController: UITabBarController,
+        presentationContext: PresentationContext,
+        hostButton: UIButton,
+        delegate: TabBarMenuDelegate
+    ) -> TabBarMenuAnchorPlacement? {
+        switch self {
+        case .tabs(let requestContext):
+            let tabs = requestContext.items(in: tabBarController)
+            guard tabs.indices.contains(index) else {
+                return nil
+            }
+            return delegate.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: tabs[index],
+                tabFrame: presentationContext.tabFrame,
+                in: presentationContext.containerView,
+                menuHostButton: hostButton
+            )
+        case .viewControllers(let requestContext):
+            let viewControllers = requestContext.items(in: tabBarController)
+            guard viewControllers.indices.contains(index) else {
+                return nil
+            }
+            return delegate.tabBarController(
+                tabBarController,
+                configureMenuPresentationFor: viewControllers[index],
+                tabFrame: presentationContext.tabFrame,
+                in: presentationContext.containerView,
+                menuHostButton: hostButton
+            )
+        }
+    }
 }
 
 extension MoreMenuRequest {

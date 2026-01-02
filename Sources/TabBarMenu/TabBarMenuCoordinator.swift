@@ -7,6 +7,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         let menu: UIMenu
         let sourceView: UIView
         let context: PresentationContext
+        let moreTabIndex: Int
     }
 
     weak var delegate: TabBarMenuDelegate?
@@ -192,14 +193,21 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         in tabBarController: UITabBarController,
         context: PresentationContext,
         request: MoreMenuRequest,
-        delegate: TabBarMenuContentDelegate
+        delegate: TabBarMenuDelegate
     ) -> MenuPlan? {
         guard request.isMoreTabIndex(tabIndex, in: tabBarController),
               let menu = request.menu(in: tabBarController, delegate: delegate) else {
             return nil
         }
         let hostButton = makeMenuHostButton(in: context.containerView)
-        return MenuPlan(menu: menu, placement: nil, hostButton: hostButton)
+        let placement = request.menuPresentationPlacement(
+            forMoreTabIndex: tabIndex,
+            in: tabBarController,
+            presentationContext: context,
+            hostButton: hostButton,
+            delegate: delegate
+        )
+        return MenuPlan(menu: menu, placement: placement, hostButton: hostButton)
     }
 
     private func makeItemMenuPlan(
@@ -417,7 +425,12 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
               let context = makePresentationContext(for: sourceView, in: tabBarController) else {
             return nil
         }
-        return MoreMenuPresentation(menu: menu, sourceView: sourceView, context: context)
+        return MoreMenuPresentation(
+            menu: menu,
+            sourceView: sourceView,
+            context: context,
+            moreTabIndex: moreTabIndex
+        )
     }
 
     private func presentMoreMenu(request: MoreMenuRequest, in tabBarController: UITabBarController) -> Bool {
@@ -432,11 +445,18 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return false
         }
         let hostButton = makeMenuHostButton(in: presentation.context.containerView)
+        let placement = request.menuPresentationPlacement(
+            forMoreTabIndex: presentation.moreTabIndex,
+            in: tabBarController,
+            presentationContext: presentation.context,
+            hostButton: hostButton,
+            delegate: delegate
+        )
         presentMenu(
             presentation.menu,
             tabFrame: presentation.context.tabFrame,
             in: presentation.context.containerView,
-            placement: nil,
+            placement: placement,
             hostButton: hostButton,
             sourceView: presentation.sourceView
         )
