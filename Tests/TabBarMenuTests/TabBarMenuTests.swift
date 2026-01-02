@@ -49,6 +49,16 @@ private final class ViewControllerMenuDelegate: TabBarMenuDelegate {
 }
 
 @MainActor
+private final class NoViewTabBarItem: UITabBarItem {
+    override func responds(to aSelector: Selector!) -> Bool {
+        if let selector = aSelector, selector == NSSelectorFromString("view") {
+            return false
+        }
+        return super.responds(to: aSelector)
+    }
+}
+
+@MainActor
 private final class SelfDelegatingTabBarController: UITabBarController, TabBarMenuDelegate {
     func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
         UIMenu(children: [])
@@ -113,6 +123,16 @@ private func makeViewControllers(count: Int) -> [UIViewController] {
         let controller = UIViewController()
         controller.title = "View \(index)"
         controller.tabBarItem = UITabBarItem(title: "Item \(index)", image: nil, tag: index)
+        return controller
+    }
+}
+
+@MainActor
+private func makeViewControllersWithNoViewItems(count: Int) -> [UIViewController] {
+    (0..<count).map { index in
+        let controller = UIViewController()
+        controller.title = "View \(index)"
+        controller.tabBarItem = NoViewTabBarItem(title: "Item \(index)", image: nil, tag: index)
         return controller
     }
 }
@@ -194,6 +214,17 @@ private func menuMinimumPressDurations(in tabBar: UITabBar) -> [TimeInterval] {
 @MainActor
 private func menuLongPressDurationsByIndex(in tabBar: UITabBar) -> [Int: TimeInterval] {
     Dictionary(uniqueKeysWithValues: menuLongPressRecognizers(in: tabBar).map { ($0.tabIndex, $0.minimumPressDuration) })
+}
+@MainActor
+private func menuRecognizerMinXAndIndices(in tabBar: UITabBar) -> [(minX: CGFloat, index: Int)] {
+    let controls = tabBarControls(in: tabBar)
+    return controls.compactMap { control in
+        guard let recognizer = (control.gestureRecognizers ?? []).compactMap({ $0 as? TabBarMenuLongPressGestureRecognizer }).first else {
+            return nil
+        }
+        let frame = control.convert(control.bounds, to: tabBar)
+        return (frame.minX, recognizer.tabIndex)
+    }
 }
 @MainActor
 private func moreTabBarItem(in tabBarController: UITabBarController) -> UITabBarItem? {
@@ -309,6 +340,54 @@ func menuDelegateAttachesLongPressGesturesForViewControllers() async {
     #expect(indices.count == expectedCount)
     #expect(indices == expectedIndices)
     #expect(host.window.rootViewController === controller)
+}
+
+@Test("RTL fallback ordering maps indices to right-to-left controls")
+@MainActor
+func rtlFallbackOrderingMapsIndicesToRightToLeftControls() async {
+    let controller = UITabBarController()
+    let viewControllers = makeViewControllersWithNoViewItems(count: 3)
+    controller.setViewControllers(viewControllers, animated: false)
+    controller.tabBar.semanticContentAttribute = .forceRightToLeft
+    let host = WindowHost(rootViewController: controller)
+    let delegate = ViewControllerMenuDelegate()
+
+    controller.menuDelegate = delegate
+    controller.view.setNeedsLayout()
+    host.window.layoutIfNeeded()
+
+    #expect(controller.tabBar.effectiveUserInterfaceLayoutDirection == .rightToLeft)
+    let itemViews = controller.tabBar.items?.compactMap { tabBarItemView($0) } ?? []
+    #expect(itemViews.isEmpty)
+
+    let entries = menuRecognizerMinXAndIndices(in: controller.tabBar)
+    #expect(entries.count == viewControllers.count)
+    let sortedEntries = entries.sorted { $0.minX > $1.minX }
+    #expect(sortedEntries.map(\.index) == Array(0..<entries.count))
+}
+
+@Test("LTR fallback ordering maps indices to left-to-right controls")
+@MainActor
+func ltrFallbackOrderingMapsIndicesToLeftToRightControls() async {
+    let controller = UITabBarController()
+    let viewControllers = makeViewControllersWithNoViewItems(count: 3)
+    controller.setViewControllers(viewControllers, animated: false)
+    controller.tabBar.semanticContentAttribute = .forceLeftToRight
+    let host = WindowHost(rootViewController: controller)
+    let delegate = ViewControllerMenuDelegate()
+
+    controller.menuDelegate = delegate
+    controller.view.setNeedsLayout()
+    host.window.layoutIfNeeded()
+
+    #expect(controller.tabBar.effectiveUserInterfaceLayoutDirection == .leftToRight)
+    let itemViews = controller.tabBar.items?.compactMap { tabBarItemView($0) } ?? []
+    #expect(itemViews.isEmpty)
+
+    let entries = menuRecognizerMinXAndIndices(in: controller.tabBar)
+    #expect(entries.count == viewControllers.count)
+    let sortedEntries = entries.sorted { $0.minX < $1.minX }
+    #expect(sortedEntries.map(\.index) == Array(0..<entries.count))
 }
 
 @Test("menuDelegate supports self assignment")
