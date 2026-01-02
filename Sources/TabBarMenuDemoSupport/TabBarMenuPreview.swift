@@ -217,7 +217,7 @@ private final class TabBarMenuPreviewController: UITabBarController, TabBarMenuD
         tabFrame: CGRect,
         in containerView: UIView,
         menuHostButton: UIButton
-    ) -> TabBarMenuAnchorPlacement?{
+    ) -> TabBarMenuAnchorPlacement? {
         menuHostButton.preferredMenuElementOrder = .fixed
         return nil
     }

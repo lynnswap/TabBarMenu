@@ -4,7 +4,7 @@ import Combine
 @testable import TabBarMenu
 
 @MainActor
-private final class TestMenuDelegate: TabBarMenuDelegate {
+private final class TestMenuDelegate: NSObject, TabBarMenuDelegate {
     private(set) var requestedIdentifiers: [String?] = []
     private let menu: UIMenu
 
@@ -19,7 +19,7 @@ private final class TestMenuDelegate: TabBarMenuDelegate {
 }
 
 @MainActor
-private final class MoreTabMenuDelegate: TabBarMenuDelegate {
+private final class MoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
     private(set) var requestedTabsCount = 0
     private let menu: UIMenu?
 
@@ -34,7 +34,33 @@ private final class MoreTabMenuDelegate: TabBarMenuDelegate {
 }
 
 @MainActor
-private final class ViewControllerMenuDelegate: TabBarMenuDelegate {
+private final class DualMoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
+    private(set) var requestedTabsCount = 0
+    private(set) var requestedViewControllersCount = 0
+    private let tabsMenu: UIMenu?
+    private let viewControllersMenu: UIMenu?
+
+    init(tabsMenu: UIMenu?, viewControllersMenu: UIMenu?) {
+        self.tabsMenu = tabsMenu
+        self.viewControllersMenu = viewControllersMenu
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+        requestedTabsCount += 1
+        return tabsMenu
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        menuForMoreTabWith viewControllers: [UIViewController]
+    ) -> UIMenu? {
+        requestedViewControllersCount += 1
+        return viewControllersMenu
+    }
+}
+
+@MainActor
+private final class ViewControllerMenuDelegate: NSObject, TabBarMenuDelegate {
     private(set) var requestedTitles: [String?] = []
     private let menu: UIMenu
 
@@ -536,6 +562,31 @@ func moreTabSelectionAllowsDefaultWhenMenuIsAbsent() async {
         #expect(shouldCallDefault == true)
     }
     #expect(delegate.requestedTabsCount == 1)
+}
+
+@Test("more tab selection prefers tabs method when implemented")
+@MainActor
+func moreTabSelectionPrefersTabsMethodWhenImplemented() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = DualMoreTabMenuDelegate(
+        tabsMenu: nil,
+        viewControllersMenu: UIMenu(children: [])
+    )
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(handler != nil)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+    if let handler, let moreItem {
+        let shouldCallDefault = handler(context.controller.tabBar, moreItem)
+        #expect(shouldCallDefault == true)
+    }
+    #expect(delegate.requestedTabsCount == 1)
+    #expect(delegate.requestedViewControllersCount == 0)
 }
 
 @Test("more tab selection suppresses default when menu is provided")

@@ -8,6 +8,11 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         case viewControllers
     }
 
+    private enum MoreMenuSelector {
+        static let tabs = NSSelectorFromString("tabBarController:menuForMoreTabWithTabs:")
+        static let viewControllers = NSSelectorFromString("tabBarController:menuForMoreTabWithViewControllers:")
+    }
+
     private struct PresentationContext {
         let containerView: UIView
         let tabFrame: CGRect
@@ -167,23 +172,17 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         in tabBarController: UITabBarController,
         context: PresentationContext
     ) -> MenuPlan? {
-        // 1) Prefer the system More tab menu for tabs.
-        if isMoreTabIndex(tabIndex, in: tabBarController, source: .tabs),
-           let menu = menuForMoreTab(in: tabBarController, source: .tabs) {
+        // 1) Prefer the system More tab menu for the implemented More-tab API.
+        if let source = preferredMoreMenuSource(),
+           isMoreTabIndex(tabIndex, in: tabBarController, source: source),
+           let menu = menuForMoreTab(in: tabBarController, source: source) {
             let hostButton = makeMenuHostButton(in: context.containerView)
             return MenuPlan(menu: menu, placement: nil, hostButton: hostButton)
         }
 
-        // 2) Prefer the system More tab menu for view controllers.
-        if isMoreTabIndex(tabIndex, in: tabBarController, source: .viewControllers),
-           let menu = menuForMoreTab(in: tabBarController, source: .viewControllers) {
-            let hostButton = makeMenuHostButton(in: context.containerView)
-            return MenuPlan(menu: menu, placement: nil, hostButton: hostButton)
-        }
-
-        // 3) Per-item menu using UITab (iOS 18+ API).
+        // 2) Per-item menu using UITab (iOS 18+ API).
         if let tab = tabForMenu(at: tabIndex, in: tabBarController),
-           let menu = delegate?.tabBarController(tabBarController, tab: tab) {
+           let menu = delegate?.tabBarController?(tabBarController, tab: tab) {
             let hostButton = makeMenuHostButton(in: context.containerView)
             let placement = delegate?.tabBarController(
                 tabBarController,
@@ -195,9 +194,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return MenuPlan(menu: menu, placement: placement, hostButton: hostButton)
         }
 
-        // 4) Per-item menu using UIViewController API.
+        // 3) Per-item menu using UIViewController API.
         if let viewController = viewControllerForMenu(at: tabIndex, in: tabBarController),
-           let menu = delegate?.tabBarController(tabBarController, viewController: viewController) {
+           let menu = delegate?.tabBarController?(tabBarController, viewController: viewController) {
             let hostButton = makeMenuHostButton(in: context.containerView)
             let placement = delegate?.tabBarController(
                 tabBarController,
@@ -455,6 +454,28 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         itemForMenu(at: index, in: tabBarController.viewControllers ?? [])
     }
 
+    private func supportsMoreMenu(source: MenuSource) -> Bool {
+        guard let delegate else {
+            return false
+        }
+        switch source {
+        case .tabs:
+            return delegate.responds(to: MoreMenuSelector.tabs)
+        case .viewControllers:
+            return delegate.responds(to: MoreMenuSelector.viewControllers)
+        }
+    }
+
+    private func preferredMoreMenuSource() -> MenuSource? {
+        if supportsMoreMenu(source: .tabs) {
+            return .tabs
+        }
+        if supportsMoreMenu(source: .viewControllers) {
+            return .viewControllers
+        }
+        return nil
+    }
+
     private func menuForMoreTab(in tabBarController: UITabBarController, source: MenuSource) -> UIMenu? {
         guard let delegate else {
             return nil
@@ -466,14 +487,14 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             guard !tabs.isEmpty else {
                 return nil
             }
-            return delegate.tabBarController(tabBarController, menuForMoreTabWith: tabs)
+            return delegate.tabBarController?(tabBarController, menuForMoreTabWith: tabs)
 
         case .viewControllers:
             let viewControllers = moreItems(from: tabBarController.viewControllers ?? [])
             guard !viewControllers.isEmpty else {
                 return nil
             }
-            return delegate.tabBarController(tabBarController, menuForMoreTabWith: viewControllers)
+            return delegate.tabBarController?(tabBarController, menuForMoreTabWith: viewControllers)
         }
     }
 
@@ -509,6 +530,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     fileprivate func handleMoreSelection(_ viewController: UIViewController, in tabBarController: UITabBarController) -> Bool {
+        guard preferredMoreMenuSource() == .viewControllers else {
+            return false
+        }
         guard isMoreViewController(viewController, in: tabBarController) else {
             return false
         }
@@ -516,6 +540,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     fileprivate func handleMoreSelection(_ tab: UITab, in tabBarController: UITabBarController) -> Bool {
+        guard preferredMoreMenuSource() == .tabs else {
+            return false
+        }
         guard isMoreTab(tab, in: tabBarController) else {
             return false
         }
@@ -523,12 +550,11 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     fileprivate func handleMoreSelection(_ item: UITabBarItem, in tabBarController: UITabBarController) -> Bool {
-        for source in MenuSource.allCases {
-            if handleMoreSelection(item, in: tabBarController, source: source) {
-                return true
-            }
+        
+        guard let source = preferredMoreMenuSource() else {
+            return false
         }
-        return false
+        return handleMoreSelection(item, in: tabBarController, source: source)
     }
 
     private func handleMoreSelection(

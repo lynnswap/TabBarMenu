@@ -95,7 +95,7 @@ updateMenuConfiguration { configuration in
 
 ## Optional: menu anchor placement
 
-Return a `TabBarMenuAnchorPlacement` from the optional delegate method.
+Implement `configureMenuPresentationFor…` to customize the anchor placement and menu host button.
 
 ```swift
 func tabBarController(
@@ -105,7 +105,8 @@ func tabBarController(
     in containerView: UIView,
     menuHostButton: UIButton
 ) -> TabBarMenuAnchorPlacement? {
-    .above()
+    menuHostButton.preferredMenuElementOrder = .fixed
+    return .above()
 }
 ```
 
