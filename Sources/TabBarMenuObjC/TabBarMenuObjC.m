@@ -114,31 +114,29 @@ static void TBM_didSelectButtonForItem(id self, SEL _cmd, id item)
 
 static Class TBMEnsureSubclass(UITabBar *tabBar)
 {
+    Class currentClass = object_getClass(tabBar);
+    if (!currentClass) {
+        return Nil;
+    }
+
     Class subclass = objc_getAssociatedObject(tabBar, &kMenuSubclassKey);
-    if (subclass) {
-        if (object_getClass(tabBar) != subclass) {
-            object_setClass(tabBar, subclass);
-        }
+    if (subclass && currentClass == subclass) {
         return subclass;
     }
 
-    Class baseClass = object_getClass(tabBar);
-    if (!baseClass) {
-        return Nil;
-    }
-    NSString *baseClassName = [NSString stringWithUTF8String:class_getName(baseClass)];
-    if ([baseClassName hasPrefix:kSubclassPrefix]) {
-        objc_setAssociatedObject(tabBar, &kMenuSubclassKey, baseClass, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        return baseClass;
+    NSString *currentClassName = [NSString stringWithUTF8String:class_getName(currentClass)];
+    if ([currentClassName hasPrefix:kSubclassPrefix]) {
+        objc_setAssociatedObject(tabBar, &kMenuSubclassKey, currentClass, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return currentClass;
     }
 
-    NSString *subclassName = [NSString stringWithFormat:@"%@%@_%p", kSubclassPrefix, baseClassName, tabBar];
-    subclass = objc_allocateClassPair(baseClass, subclassName.UTF8String, 0);
+    NSString *subclassName = [NSString stringWithFormat:@"%@%@_%p", kSubclassPrefix, currentClassName, tabBar];
+    subclass = objc_allocateClassPair(currentClass, subclassName.UTF8String, 0);
     if (!subclass) {
         static uint64_t counter = 0;
         counter += 1;
-        NSString *fallbackName = [NSString stringWithFormat:@"%@%@_%p_%llu", kSubclassPrefix, baseClassName, tabBar, counter];
-        subclass = objc_allocateClassPair(baseClass, fallbackName.UTF8String, 0);
+        NSString *fallbackName = [NSString stringWithFormat:@"%@%@_%p_%llu", kSubclassPrefix, currentClassName, tabBar, counter];
+        subclass = objc_allocateClassPair(currentClass, fallbackName.UTF8String, 0);
     }
     if (!subclass) {
         return Nil;
