@@ -6,8 +6,26 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private struct MoreMenuPresentation {
         let menu: UIMenu
         let sourceView: UIView
-        let context: PresentationContext
-        let moreTabIndex: Int
+    }
+
+    private final class MenuPresentationRequest {
+        weak var tabBarController: UITabBarController?
+        weak var sourceView: UIView?
+        let menu: UIMenu
+        let placementProvider: (PresentationContext, UIButton) -> TabBarMenuAnchorPlacement?
+        var token: Int = 0
+
+        init(
+            tabBarController: UITabBarController?,
+            sourceView: UIView?,
+            menu: UIMenu,
+            placementProvider: @escaping (PresentationContext, UIButton) -> TabBarMenuAnchorPlacement?
+        ) {
+            self.tabBarController = tabBarController
+            self.sourceView = sourceView
+            self.menu = menu
+            self.placementProvider = placementProvider
+        }
     }
 
     weak var delegate: TabBarMenuDelegate?
@@ -21,6 +39,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private weak var tabBarController: UITabBarController?
     private var menuHostButton: UIButton?
     private var cancellables = Set<AnyCancellable>()
+    private var pendingMenuPresentation: MenuPresentationRequest?
+    private var isAttemptingMenuPresentation = false
+    private var menuPresentationToken: Int = 0
 
     @MainActor deinit {
         detach()
@@ -36,6 +57,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             }
             menuHostButton?.removeFromSuperview()
             menuHostButton = nil
+            pendingMenuPresentation = nil
+            isAttemptingMenuPresentation = false
+            menuPresentationToken = 0
             self.tabBarController = tabBarController
             startObservingTabs()
         }
@@ -52,6 +76,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
         menuHostButton?.removeFromSuperview()
         menuHostButton = nil
+        pendingMenuPresentation = nil
+        isAttemptingMenuPresentation = false
+        menuPresentationToken = 0
         tabBarController = nil
     }
 
@@ -157,10 +184,73 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return PresentationContext(containerView: containerView, tabFrame: tabFrame)
     }
 
+    // Defer menu presentation until tab transitions settle to avoid UIKit layer invalidation.
+    private func scheduleMenuPresentation(_ request: MenuPresentationRequest) {
+        menuPresentationToken += 1
+        request.token = menuPresentationToken
+        pendingMenuPresentation = request
+        attemptPendingMenuPresentation()
+    }
+
+    private func attemptPendingMenuPresentation() {
+        guard let pending = pendingMenuPresentation else {
+            return
+        }
+        guard let tabBarController = pending.tabBarController,
+              let sourceView = pending.sourceView else {
+            pendingMenuPresentation = nil
+            return
+        }
+        if tabBarController.transitionCoordinator != nil {
+            schedulePendingMenuRetry(with: tabBarController)
+            return
+        }
+        pendingMenuPresentation = nil
+        let token = pending.token
+        Task { @MainActor [weak self, weak tabBarController, weak sourceView] in
+            guard let self,
+                  let tabBarController,
+                  let sourceView,
+                  token == self.menuPresentationToken else {
+                return
+            }
+            guard let context = self.makePresentationContext(for: sourceView, in: tabBarController),
+                  context.containerView.window != nil else {
+                return
+            }
+            let hostButton = self.makeMenuHostButton(in: context.containerView)
+            let placement = pending.placementProvider(context, hostButton)
+            self.presentMenu(
+                pending.menu,
+                tabFrame: context.tabFrame,
+                in: context.containerView,
+                placement: placement,
+                hostButton: hostButton,
+                sourceView: sourceView
+            )
+        }
+    }
+
+    private func schedulePendingMenuRetry(with tabBarController: UITabBarController) {
+        guard isAttemptingMenuPresentation == false else {
+            return
+        }
+        isAttemptingMenuPresentation = true
+        tabBarController.transitionCoordinator?.animate(alongsideTransition: nil) { [weak self] _ in
+            guard let self else { return }
+            self.isAttemptingMenuPresentation = false
+            self.attemptPendingMenuPresentation()
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.isAttemptingMenuPresentation = false
+            self.attemptPendingMenuPresentation()
+        }
+    }
+
     private func makeMenuPlan(
         for tabIndex: Int,
-        in tabBarController: UITabBarController,
-        context: PresentationContext
+        in tabBarController: UITabBarController
     ) -> MenuPlan? {
         guard let delegate else {
             return nil
@@ -170,7 +260,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
            let plan = makeMoreMenuPlan(
             for: tabIndex,
             in: tabBarController,
-            context: context,
             request: request,
             delegate: delegate
            ) {
@@ -182,7 +271,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return makeItemMenuPlan(
             for: tabIndex,
             in: tabBarController,
-            context: context,
             request: request,
             delegate: delegate
         )
@@ -191,7 +279,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private func makeMoreMenuPlan(
         for tabIndex: Int,
         in tabBarController: UITabBarController,
-        context: PresentationContext,
         request: MoreMenuRequest,
         delegate: TabBarMenuDelegate
     ) -> MenuPlan? {
@@ -199,20 +286,21 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
               let menu = request.menu(in: tabBarController, delegate: delegate) else {
             return nil
         }
-        let hostButton = makeMenuHostButton(in: context.containerView)
-        let placement = request.menuPresentationPlacement(
-            in: tabBarController,
-            presentationContext: context,
-            hostButton: hostButton,
-            delegate: delegate
-        )
-        return MenuPlan(menu: menu, placement: placement, hostButton: hostButton)
+        let placementProvider: (PresentationContext, UIButton) -> TabBarMenuAnchorPlacement? = { [weak delegate, weak tabBarController] context, hostButton in
+            guard let delegate, let tabBarController else { return nil }
+            return request.menuPresentationPlacement(
+                in: tabBarController,
+                presentationContext: context,
+                hostButton: hostButton,
+                delegate: delegate
+            )
+        }
+        return MenuPlan(menu: menu, placementProvider: placementProvider)
     }
 
     private func makeItemMenuPlan(
         for tabIndex: Int,
         in tabBarController: UITabBarController,
-        context: PresentationContext,
         request: ItemMenuRequest,
         delegate: TabBarMenuDelegate
     ) -> MenuPlan? {
@@ -223,26 +311,27 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         ) else {
             return nil
         }
-        let hostButton = makeMenuHostButton(in: context.containerView)
-        let placement = request.menuPresentationPlacement(
-            forItemAt: tabIndex,
-            in: tabBarController,
-            presentationContext: context,
-            hostButton: hostButton,
-            delegate: delegate
-        )
-        return MenuPlan(menu: menu, placement: placement, hostButton: hostButton)
+        let placementProvider: (PresentationContext, UIButton) -> TabBarMenuAnchorPlacement? = { [weak delegate, weak tabBarController] context, hostButton in
+            guard let delegate, let tabBarController else { return nil }
+            return request.menuPresentationPlacement(
+                forItemAt: tabIndex,
+                in: tabBarController,
+                presentationContext: context,
+                hostButton: hostButton,
+                delegate: delegate
+            )
+        }
+        return MenuPlan(menu: menu, placementProvider: placementProvider)
     }
 
-    private func presentPlannedMenu(_ plan: MenuPlan, context: PresentationContext, sourceView: UIView) {
-        presentMenu(
-            plan.menu,
-            tabFrame: context.tabFrame,
-            in: context.containerView,
-            placement: plan.placement,
-            hostButton: plan.hostButton,
-            sourceView: sourceView
+    private func presentPlannedMenu(_ plan: MenuPlan, sourceView: UIView, in tabBarController: UITabBarController) {
+        let request = MenuPresentationRequest(
+            tabBarController: tabBarController,
+            sourceView: sourceView,
+            menu: plan.menu,
+            placementProvider: plan.placementProvider
         )
+        scheduleMenuPresentation(request)
     }
 
     private func presentMenu(from button: UIButton) {
@@ -406,19 +495,16 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     ) -> MoreMenuPresentation? {
         guard let menu = request.menu(in: tabBarController, delegate: delegate),
               let moreTabIndex = request.moreTabStartIndex(in: tabBarController),
-              let sourceView = moreTabView(in: tabBarController, moreTabIndex: moreTabIndex),
-              let context = makePresentationContext(for: sourceView, in: tabBarController) else {
+              let sourceView = moreTabView(in: tabBarController, moreTabIndex: moreTabIndex) else {
             return nil
         }
         return MoreMenuPresentation(
             menu: menu,
-            sourceView: sourceView,
-            context: context,
-            moreTabIndex: moreTabIndex
+            sourceView: sourceView
         )
     }
 
-    private func presentMoreMenu(request: MoreMenuRequest, in tabBarController: UITabBarController) -> Bool {
+    private func scheduleMoreMenuPresentation(request: MoreMenuRequest, in tabBarController: UITabBarController) -> Bool {
         guard let delegate else {
             return false
         }
@@ -429,21 +515,22 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         ) else {
             return false
         }
-        let hostButton = makeMenuHostButton(in: presentation.context.containerView)
-        let placement = request.menuPresentationPlacement(
-            in: tabBarController,
-            presentationContext: presentation.context,
-            hostButton: hostButton,
-            delegate: delegate
+        let placementProvider: (PresentationContext, UIButton) -> TabBarMenuAnchorPlacement? = { [weak delegate, weak tabBarController] context, hostButton in
+            guard let delegate, let tabBarController else { return nil }
+            return request.menuPresentationPlacement(
+                in: tabBarController,
+                presentationContext: context,
+                hostButton: hostButton,
+                delegate: delegate
+            )
+        }
+        let menuRequest = MenuPresentationRequest(
+            tabBarController: tabBarController,
+            sourceView: presentation.sourceView,
+            menu: presentation.menu,
+            placementProvider: placementProvider
         )
-        presentMenu(
-            presentation.menu,
-            tabFrame: presentation.context.tabFrame,
-            in: presentation.context.containerView,
-            placement: placement,
-            hostButton: hostButton,
-            sourceView: presentation.sourceView
-        )
+        scheduleMenuPresentation(menuRequest)
         return true
     }
 
@@ -458,19 +545,16 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard request.matches(item: item, in: tabBarController) else {
             return false
         }
-        return presentMoreMenu(request: request, in: tabBarController)
+        return scheduleMoreMenuPresentation(request: request, in: tabBarController)
     }
 
     // MARK: - Long press
 
     private func handleMenuTrigger(tabIndex: Int, sourceView: UIView, in tabBarController: UITabBarController) {
-        guard let context = makePresentationContext(for: sourceView, in: tabBarController) else {
+        guard let plan = makeMenuPlan(for: tabIndex, in: tabBarController) else {
             return
         }
-        guard let plan = makeMenuPlan(for: tabIndex, in: tabBarController, context: context) else {
-            return
-        }
-        presentPlannedMenu(plan, context: context, sourceView: sourceView)
+        presentPlannedMenu(plan, sourceView: sourceView, in: tabBarController)
     }
 
     @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {

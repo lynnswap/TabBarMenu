@@ -195,6 +195,16 @@ private func makeTabBarTestContext(tabCount: Int) -> TabBarTestContext {
     let host = WindowHost(rootViewController: controller)
     return TabBarTestContext(controller: controller, host: host, tabs: tabs)
 }
+
+@MainActor
+private func makeTabBarControllerWithoutWindow(tabCount: Int) -> (controller: UITabBarController, tabs: [UITab]) {
+    let tabs = makeTabs(count: tabCount)
+    let controller = UITabBarController(tabs: tabs)
+    controller.loadViewIfNeeded()
+    controller.view.setNeedsLayout()
+    controller.view.layoutIfNeeded()
+    return (controller, tabs)
+}
 @MainActor
 private func tabBarControls(in view: UIView) -> [UIControl] {
     var result: [UIControl] = []
@@ -652,11 +662,94 @@ func moreTabSelectionConfiguresMenuPresentationWithNil() async {
     if let handler, let moreItem {
         _ = handler(context.controller.tabBar, moreItem)
     }
+    await Task.yield()
 
     #expect(delegate.configuredTabs.count == 1)
     if let configuredTab = delegate.configuredTabs.first {
         #expect(configuredTab == nil)
     }
+}
+
+@Test("more tab selection ignores stale presentations")
+@MainActor
+func moreTabSelectionIgnoresStalePresentations() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let firstDelegate = MoreTabPresentationDelegate(menu: UIMenu(children: []))
+    let secondDelegate = MoreTabPresentationDelegate(menu: UIMenu(children: []))
+
+    context.controller.menuDelegate = firstDelegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let firstHandler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(firstHandler != nil)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+    if let firstHandler, let moreItem {
+        _ = firstHandler(context.controller.tabBar, moreItem)
+    }
+
+    context.controller.menuDelegate = secondDelegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let secondHandler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(secondHandler != nil)
+    if let secondHandler, let moreItem {
+        _ = secondHandler(context.controller.tabBar, moreItem)
+    }
+
+    await Task.yield()
+
+    #expect(firstDelegate.configuredTabs.isEmpty)
+    #expect(secondDelegate.configuredTabs.count == 1)
+}
+
+@Test("more tab selection cancels pending when menu delegate clears")
+@MainActor
+func moreTabSelectionCancelsPendingWhenMenuDelegateClears() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabPresentationDelegate(menu: UIMenu(children: []))
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(handler != nil)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+    if let handler, let moreItem {
+        _ = handler(context.controller.tabBar, moreItem)
+    }
+
+    context.controller.menuDelegate = nil
+    await Task.yield()
+
+    #expect(delegate.configuredTabs.isEmpty)
+}
+
+@Test("more tab selection does not present without window")
+@MainActor
+func moreTabSelectionDoesNotPresentWithoutWindow() async {
+    let context = makeTabBarControllerWithoutWindow(tabCount: 6)
+    let delegate = MoreTabPresentationDelegate(menu: UIMenu(children: []))
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.controller.view.layoutIfNeeded()
+
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(handler != nil)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+    if let handler, let moreItem {
+        _ = handler(context.controller.tabBar, moreItem)
+    }
+
+    await Task.yield()
+
+    #expect(delegate.configuredTabs.isEmpty)
 }
 
 @Test("coordinator reattaches to a different tab bar controller")

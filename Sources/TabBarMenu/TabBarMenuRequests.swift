@@ -9,8 +9,7 @@ struct PresentationContext {
 @MainActor
 struct MenuPlan {
     let menu: UIMenu
-    let placement: TabBarMenuAnchorPlacement?
-    let hostButton: UIButton
+    let placementProvider: (PresentationContext, UIButton) -> TabBarMenuAnchorPlacement?
 }
 
 @MainActor
