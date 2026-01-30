@@ -13,7 +13,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         weak var sourceView: UIView?
         let menu: UIMenu
         let placementProvider: (PresentationContext, UIButton) -> TabBarMenuAnchorPlacement?
-        var token: Int = 0
 
         init(
             tabBarController: UITabBarController?,
@@ -39,9 +38,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private weak var tabBarController: UITabBarController?
     private var menuHostButton: UIButton?
     private var cancellables = Set<AnyCancellable>()
-    private var pendingMenuPresentation: MenuPresentationRequest?
-    private var isAttemptingMenuPresentation = false
-    private var menuPresentationToken: Int = 0
+    private var menuPresentationTask: Task<Void, Never>?
 
     @MainActor deinit {
         detach()
@@ -57,9 +54,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             }
             menuHostButton?.removeFromSuperview()
             menuHostButton = nil
-            pendingMenuPresentation = nil
-            isAttemptingMenuPresentation = false
-            menuPresentationToken = 0
+            resetMenuPresentationState()
             self.tabBarController = tabBarController
             startObservingTabs()
         }
@@ -76,9 +71,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
         menuHostButton?.removeFromSuperview()
         menuHostButton = nil
-        pendingMenuPresentation = nil
-        isAttemptingMenuPresentation = false
-        menuPresentationToken = 0
+        resetMenuPresentationState()
         tabBarController = nil
     }
 
@@ -184,68 +177,57 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return PresentationContext(containerView: containerView, tabFrame: tabFrame)
     }
 
-    // Defer menu presentation until tab transitions settle to avoid UIKit layer invalidation.
+    // Present the menu only when no tab transition is active.
     private func scheduleMenuPresentation(_ request: MenuPresentationRequest) {
-        menuPresentationToken += 1
-        request.token = menuPresentationToken
-        pendingMenuPresentation = request
-        attemptPendingMenuPresentation()
-    }
-
-    private func attemptPendingMenuPresentation() {
-        guard let pending = pendingMenuPresentation else {
-            return
-        }
-        guard let tabBarController = pending.tabBarController,
-              let sourceView = pending.sourceView else {
-            pendingMenuPresentation = nil
-            return
-        }
-        if tabBarController.transitionCoordinator != nil {
-            schedulePendingMenuRetry(with: tabBarController)
-            return
-        }
-        pendingMenuPresentation = nil
-        let token = pending.token
-        Task { @MainActor [weak self, weak tabBarController, weak sourceView] in
-            guard let self,
-                  let tabBarController,
-                  let sourceView,
-                  token == self.menuPresentationToken else {
-                return
-            }
-            guard let context = self.makePresentationContext(for: sourceView, in: tabBarController),
-                  context.containerView.window != nil else {
-                return
-            }
-            let hostButton = self.makeMenuHostButton(in: context.containerView)
-            let placement = pending.placementProvider(context, hostButton)
-            self.presentMenu(
-                pending.menu,
-                tabFrame: context.tabFrame,
-                in: context.containerView,
-                placement: placement,
-                hostButton: hostButton,
-                sourceView: sourceView
-            )
+        cancelMenuPresentationTasks()
+        menuPresentationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            presentMenuWhenStable(request)
         }
     }
 
-    private func schedulePendingMenuRetry(with tabBarController: UITabBarController) {
-        guard isAttemptingMenuPresentation == false else {
+    private func presentMenuWhenStable(_ request: MenuPresentationRequest) {
+        guard !Task.isCancelled,
+              let tabBarController = request.tabBarController,
+              let sourceView = request.sourceView else {
             return
         }
-        isAttemptingMenuPresentation = true
-        tabBarController.transitionCoordinator?.animate(alongsideTransition: nil) { [weak self] _ in
-            guard let self else { return }
-            self.isAttemptingMenuPresentation = false
-            self.attemptPendingMenuPresentation()
+        guard let context = makePresentationContext(for: sourceView, in: tabBarController),
+              context.containerView.window != nil else {
+            return
         }
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            self.isAttemptingMenuPresentation = false
-            self.attemptPendingMenuPresentation()
+        guard !Task.isCancelled else {
+            return
         }
+        let hostButton = makeMenuHostButton(in: context.containerView)
+        let placement = request.placementProvider(context, hostButton)
+        guard !Task.isCancelled else {
+            return
+        }
+        guard tabBarController.transitionCoordinator == nil else {
+            hostButton.removeFromSuperview()
+            if menuHostButton === hostButton {
+                menuHostButton = nil
+            }
+            return
+        }
+        presentMenu(
+            request.menu,
+            tabFrame: context.tabFrame,
+            in: context.containerView,
+            placement: placement,
+            hostButton: hostButton,
+            sourceView: sourceView
+        )
+    }
+
+    private func resetMenuPresentationState() {
+        cancelMenuPresentationTasks()
+    }
+
+    private func cancelMenuPresentationTasks() {
+        menuPresentationTask?.cancel()
+        menuPresentationTask = nil
     }
 
     private func makeMenuPlan(
