@@ -24,6 +24,10 @@ private enum PreviewTabDefaults {
     }
 }
 
+private enum UITestConfiguration {
+    static let isEnabled = ProcessInfo.processInfo.arguments.contains("-ui-testing")
+}
+
 @MainActor
 private protocol TabBarMenuPreviewContent: AnyObject {
     var viewModel: TabBarMenuPreviewViewModel? { get set }
@@ -222,7 +226,7 @@ private final class TabBarMenuPreviewUITabController: TabBarMenuPreviewBaseContr
         if showsSearchTab {
             updatedTabs.append(makeSearchUITab())
         }
-        let shouldAnimate = hasAppliedContent
+        let shouldAnimate = hasAppliedContent && !UITestConfiguration.isEnabled
         setTabs(updatedTabs, animated: shouldAnimate)
         hasAppliedContent = true
     }
@@ -269,7 +273,7 @@ private final class TabBarMenuPreviewViewControllerController: TabBarMenuPreview
         if showsSearchTab {
             updatedViewControllers.append(makeSearchViewController())
         }
-        let shouldAnimate = hasAppliedContent
+        let shouldAnimate = hasAppliedContent && !UITestConfiguration.isEnabled
         setViewControllers(updatedViewControllers, animated: shouldAnimate)
         hasAppliedContent = true
     }
