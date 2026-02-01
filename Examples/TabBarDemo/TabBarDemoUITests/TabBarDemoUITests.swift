@@ -46,15 +46,15 @@ final class TabBarDemoUITests: XCTestCase {
         XCTAssertTrue(overflowItem.exists)
         overflowItem.tap()
 
-        let extraOneTab = tabBar.buttons["Extra 1"]
-        XCTAssertTrue(extraOneTab.waitForExistence(timeout: Timing.ui))
+        let visibleTab = tabBar.buttons["Profile"]
+        XCTAssertTrue(visibleTab.waitForExistence(timeout: Timing.ui))
 
-        extraOneTab.press(forDuration: Timing.menuPress)
-        let extraDelete = waitForMenuItem(named: "Delete", timeout: Timing.short)
-        XCTAssertTrue(extraDelete.exists)
-        extraDelete.tap()
+        visibleTab.press(forDuration: Timing.menuPress)
+        let deleteAction = waitForMenuItem(named: "Delete", timeout: Timing.short)
+        XCTAssertTrue(deleteAction.exists)
+        deleteAction.tap()
 
-        XCTAssertTrue(waitForElementToDisappear(extraOneTab, timeout: Timing.ui))
+        XCTAssertTrue(waitForElementToDisappear(visibleTab, timeout: Timing.ui))
     }
     @MainActor
     private func launchApp() {
