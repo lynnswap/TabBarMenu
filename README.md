@@ -1,6 +1,8 @@
 # TabBarMenu
 
-Add long-press context menus to `UITabBarController` tabs on **iOS 18+**.
+**TabBarMenu** is a lightweight Swift Package that adds long-press context menus (`UIMenu`) to
+`UITabBarController` tabs on **iOS 18+**. Works with the new `UITab` API and classic
+`viewControllers`, and can override the system **More** tab.
 
 ![TabBarMenu preview](Docs/images/anchor-above.webp)
 
