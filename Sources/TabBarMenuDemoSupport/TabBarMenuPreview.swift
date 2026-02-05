@@ -1,5 +1,5 @@
-import SwiftUI
 import Observation
+import SwiftUI
 import TabBarMenu
 
 private struct PreviewTab: Equatable {
@@ -249,10 +249,10 @@ private final class TabBarMenuPreviewUITabController: TabBarMenuPreviewBaseContr
         let actions = tabs.map { tab in
             let title = tab.title.isEmpty ? "Untitled" : tab.title
             return UIAction(title: title, image: tab.image) { [weak tab] _ in
-                guard let tab ,let tabBarController = tab.tabBarController else {
+                guard let tab, let tabBarController = tab.tabBarController else {
                     return
                 }
-                if !tabBarController.moreNavigationController.navigationBar.isHidden{
+                if !tabBarController.moreNavigationController.navigationBar.isHidden {
                     tabBarController.moreNavigationController.navigationBar.isHidden = true
                 }
                 tabBarController.selectedTab = tab
@@ -300,7 +300,7 @@ private final class TabBarMenuPreviewViewControllerController: TabBarMenuPreview
                 guard let viewController, let tabBarController = viewController.tabBarController else {
                     return
                 }
-                if !tabBarController.moreNavigationController.navigationBar.isHidden{
+                if !tabBarController.moreNavigationController.navigationBar.isHidden {
                     tabBarController.moreNavigationController.navigationBar.isHidden = true
                 }
                 tabBarController.selectedViewController = viewController
@@ -337,16 +337,17 @@ private struct SampleTabView: View {
     let systemImage: String
 
     var body: some View {
-        ContentUnavailableView{
-            Label{
+        ContentUnavailableView {
+            Label {
                 Text(title)
-            }icon:{
+            } icon: {
                 Image(systemName: systemImage)
                     .symbolVariant(.fill)
             }
         }
     }
 }
+
 private struct TabBarMenuPreviewRepresentable: UIViewControllerRepresentable {
     let mode: TabBarMenuPreviewMode
     let viewModel: TabBarMenuPreviewViewModel
@@ -358,11 +359,14 @@ private struct TabBarMenuPreviewRepresentable: UIViewControllerRepresentable {
         return container
     }
 
-    func updateUIViewController(_ uiViewController: TabBarMenuPreviewContainerController, context: Context) {}
+    func updateUIViewController(_ uiViewController: TabBarMenuPreviewContainerController, context: Context) {
+        viewModel.register(uiViewController)
+        viewModel.updateMode(mode)
+    }
 }
 
 public struct TabBarMenuPreviewScreen: View {
-    private var mode: TabBarMenuPreviewMode
+    private let mode: TabBarMenuPreviewMode
     @State private var viewModel = TabBarMenuPreviewViewModel()
 
     public init(mode: TabBarMenuPreviewMode) {
@@ -372,7 +376,7 @@ public struct TabBarMenuPreviewScreen: View {
     public var body: some View {
         TabBarMenuPreviewRepresentable(mode: mode, viewModel: viewModel)
             .ignoresSafeArea()
-            .toolbar{
+            .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Toggle("Search Tab", isOn: Bindable(viewModel).isSearchTabEnabled)
                 }
@@ -382,21 +386,18 @@ public struct TabBarMenuPreviewScreen: View {
                     }
                 }
             }
-            .onChange(of: mode) {
-                viewModel.updateMode(mode)
-            }
     }
 }
 
 #if DEBUG
 #Preview("TabBarMenu UITab") {
-    NavigationStack{
+    NavigationStack {
         TabBarMenuPreviewScreen(mode: .uiTab)
     }
 }
 
 #Preview("TabBarMenu UITabBarItem") {
-    NavigationStack{
+    NavigationStack {
         TabBarMenuPreviewScreen(mode: .uiTabBarItem)
     }
 }
