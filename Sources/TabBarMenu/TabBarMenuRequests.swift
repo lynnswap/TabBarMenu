@@ -92,18 +92,6 @@ struct TabBarMenuTabRequestContext: TabBarMenuRequestContext {
     func items(in tabBarController: UITabBarController) -> [UITab] {
         tabBarController.tabs
     }
-
-    fileprivate func isMoreTab(_ tab: UITab, in tabBarController: UITabBarController) -> Bool {
-        let tabs = tabBarController.tabs
-        guard let moreIndex = core.moreTabStartIndex(totalCount: tabs.count) else {
-            return false
-        }
-        if let index = tabs.firstIndex(where: { $0 === tab }) {
-            return index == moreIndex
-        }
-        // If we can't find it, be conservative and treat it as the More tab.
-        return true
-    }
 }
 
 @MainActor
@@ -112,26 +100,6 @@ struct TabBarMenuViewControllerRequestContext: TabBarMenuRequestContext {
 
     func items(in tabBarController: UITabBarController) -> [UIViewController] {
         tabBarController.viewControllers ?? []
-    }
-
-    fileprivate func isMoreViewController(
-        _ viewController: UIViewController,
-        in tabBarController: UITabBarController
-    ) -> Bool {
-        let moreNavigationController = tabBarController.moreNavigationController
-        if viewController === moreNavigationController {
-            return true
-        }
-        if viewController.tabBarItem === moreNavigationController.tabBarItem {
-            return true
-        }
-        let totalCount = items(in: tabBarController).count
-        guard let moreIndex = core.moreTabStartIndex(totalCount: totalCount),
-              let items = tabBarController.tabBar.items,
-              items.indices.contains(moreIndex) else {
-            return false
-        }
-        return viewController.tabBarItem === items[moreIndex]
     }
 }
 

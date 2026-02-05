@@ -9,24 +9,23 @@ import SwiftUI
 import TabBarMenuDemoSupport
 
 struct ContentView: View {
-    @AppStorage("selectedTab") private var mode :TabBarMenuPreviewMode = .uiTab
+    @AppStorage("selectedTab") private var mode: TabBarMenuPreviewMode = .uiTab
+
     var body: some View {
-        NavigationStack{
+        NavigationStack {
             TabBarMenuPreviewScreen(mode: mode)
-                .toolbar{
+                .toolbar {
                     ToolbarItem(placement: .principal) {
                         modePicker
                     }
                 }
         }
     }
-    @ViewBuilder
-    private var modePicker:some View{
-        Picker(selection:$mode){
+
+    private var modePicker: some View {
+        Picker("Mode", selection: $mode) {
             Text("UITab").tag(TabBarMenuPreviewMode.uiTab)
             Text("VC").tag(TabBarMenuPreviewMode.uiTabBarItem)
-        }label:{
-            EmptyView()
         }
         .pickerStyle(.segmented)
         .labelsHidden()
