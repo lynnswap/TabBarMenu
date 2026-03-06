@@ -2,11 +2,11 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-typedef void (^TBMItemsDidChangeHandler)(UITabBar *tabBar);
+typedef void (^TBMLayoutHandler)(UITabBar *tabBar);
 typedef BOOL (^TBMSelectionHandler)(UITabBar *tabBar, UITabBarItem *item);
 
-FOUNDATION_EXPORT void TBMInstallItemsOverrides(UITabBar *tabBar);
-FOUNDATION_EXPORT void TBMSetItemsDidChangeHandler(UITabBar *tabBar, TBMItemsDidChangeHandler _Nullable handler);
+FOUNDATION_EXPORT void TBMInstallLayoutOverride(UITabBar *tabBar);
+FOUNDATION_EXPORT void TBMSetLayoutHandler(UITabBar *tabBar, TBMLayoutHandler _Nullable handler);
 
 FOUNDATION_EXPORT void TBMInstallSelectionOverride(UITabBar *tabBar);
 FOUNDATION_EXPORT void TBMSetSelectionHandler(UITabBar *tabBar, TBMSelectionHandler _Nullable handler);

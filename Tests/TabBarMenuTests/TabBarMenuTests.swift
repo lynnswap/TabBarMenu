@@ -1,6 +1,5 @@
 import Testing
 import UIKit
-import Combine
 @testable import TabBarMenu
 
 @MainActor
@@ -117,19 +116,6 @@ private final class SelfDelegatingTabBarController: UITabBarController, TabBarMe
 }
 
 @MainActor
-private final class TabBarItemsChangeRecorder {
-    private(set) var events: [[UITabBarItem]] = []
-    private var cancellable: AnyCancellable?
-
-    init(tabBar: UITabBar) {
-        cancellable = tabBar.itemsDidChangePublisher
-            .sink { [weak self] items in
-                self?.events.append(items)
-            }
-    }
-}
-
-@MainActor
 private final class WindowHost {
     let window: UIWindow
 
@@ -147,6 +133,38 @@ private struct TabBarTestContext {
     let controller: UITabBarController
     let host: WindowHost
     let tabs: [UITab]
+}
+
+@MainActor
+private final class StandaloneTabBarHost {
+    let containerView: UIView
+    let tabBar: UITabBar
+
+    init(size: CGSize = CGSize(width: 320, height: 49)) {
+        containerView = UIView(frame: CGRect(origin: .zero, size: size))
+        tabBar = UITabBar(frame: containerView.bounds)
+        tabBar.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        containerView.addSubview(tabBar)
+        layoutIfNeeded()
+    }
+
+    func layoutIfNeeded() {
+        containerView.setNeedsLayout()
+        tabBar.setNeedsLayout()
+        containerView.layoutIfNeeded()
+        tabBar.layoutIfNeeded()
+    }
+}
+
+@MainActor
+private final class TabBarLayoutRecorder {
+    private(set) var events: [[Int]] = []
+
+    init(tabBar: UITabBar) {
+        tabBar.tabBarMenuLayoutHandler = { [weak self] tabBar in
+            self?.events.append(tabBar.items?.map(\.tag) ?? [])
+        }
+    }
 }
 
 @MainActor
@@ -259,6 +277,14 @@ private func menuMinimumPressDurations(in tabBar: UITabBar) -> [TimeInterval] {
     menuLongPressRecognizers(in: tabBar).map(\.minimumPressDuration)
 }
 @MainActor
+private func menuRecognizerIdentityCount(in tabBar: UITabBar) -> Int {
+    Set(menuLongPressRecognizers(in: tabBar).map(ObjectIdentifier.init)).count
+}
+@MainActor
+private func menuRecognizerIdentitySet(in tabBar: UITabBar) -> Set<ObjectIdentifier> {
+    Set(menuLongPressRecognizers(in: tabBar).map(ObjectIdentifier.init))
+}
+@MainActor
 private func menuLongPressDurationsByIndex(in tabBar: UITabBar) -> [Int: TimeInterval] {
     Dictionary(uniqueKeysWithValues: menuLongPressRecognizers(in: tabBar).map { ($0.tabIndex, $0.minimumPressDuration) })
 }
@@ -286,66 +312,71 @@ private func moreTabBarItem(in tabBarController: UITabBarController) -> UITabBar
     return items[moreIndex]
 }
 
-@Test("itemsDidChangePublisher emits when items are assigned")
+@Test("layout handler runs when items are assigned and laid out")
 @MainActor
-func itemsDidChangePublisherEmitsOnAssignment() async {
-    let tabBar = UITabBar()
-    let recorder = TabBarItemsChangeRecorder(tabBar: tabBar)
+func layoutHandlerRunsOnItemsAssignment() {
+    let host = StandaloneTabBarHost()
+    let recorder = TabBarLayoutRecorder(tabBar: host.tabBar)
     let updatedItems = makeTabBarItems(count: 3)
     let baseCount = recorder.events.count
 
-    tabBar.items = updatedItems
-    await Task.yield()
+    host.tabBar.items = updatedItems
+    host.layoutIfNeeded()
 
     #expect(recorder.events.count == baseCount + 1)
-    #expect(recorder.events.last?.map(\.tag) == updatedItems.map(\.tag))
+    #expect(recorder.events.last == updatedItems.map(\.tag))
 }
 
-@Test("itemsDidChangePublisher emits when setItems is called")
+@Test("layout handler runs when setItems is called and laid out")
 @MainActor
-func itemsDidChangePublisherEmitsOnSetItems() async {
-    let tabBar = UITabBar()
-    let recorder = TabBarItemsChangeRecorder(tabBar: tabBar)
+func layoutHandlerRunsOnSetItems() {
+    let host = StandaloneTabBarHost()
+    let recorder = TabBarLayoutRecorder(tabBar: host.tabBar)
     let updatedItems = makeTabBarItems(count: 1)
     let baseCount = recorder.events.count
 
-    tabBar.setItems(updatedItems, animated: false)
-    await Task.yield()
+    host.tabBar.setItems(updatedItems, animated: false)
+    host.layoutIfNeeded()
 
     #expect(recorder.events.count == baseCount + 1)
-    #expect(recorder.events.last?.map(\.tag) == updatedItems.map(\.tag))
+    #expect(recorder.events.last == updatedItems.map(\.tag))
 }
 
-@Test("itemsDidChangePublisher emits for in-place mutations")
+@Test("layout handler runs for in-place item mutations after layout")
 @MainActor
-func itemsDidChangePublisherEmitsForInPlaceMutations() async {
-    let tabBar = UITabBar()
-    let recorder = TabBarItemsChangeRecorder(tabBar: tabBar)
-    tabBar.items = makeTabBarItems(count: 2)
+func layoutHandlerRunsForInPlaceItemMutations() {
+    let host = StandaloneTabBarHost()
+    let recorder = TabBarLayoutRecorder(tabBar: host.tabBar)
+    host.tabBar.items = makeTabBarItems(count: 2)
+    host.layoutIfNeeded()
     var expectedCount = recorder.events.count
 
-    tabBar.items?.append(UITabBarItem(title: "Append", image: nil, tag: 99))
+    host.tabBar.items?.append(UITabBarItem(title: "Append", image: nil, tag: 99))
+    host.layoutIfNeeded()
     expectedCount += 1
-    await Task.yield()
     #expect(recorder.events.count == expectedCount)
+    #expect(recorder.events.last == [0, 1, 99])
 
-    if var items = tabBar.items, !items.isEmpty {
+    if var items = host.tabBar.items, !items.isEmpty {
         items[0] = UITabBarItem(title: "Replace", image: nil, tag: 100)
-        tabBar.items = items
+        host.tabBar.items = items
+        host.layoutIfNeeded()
         expectedCount += 1
-        await Task.yield()
         #expect(recorder.events.count == expectedCount)
+        #expect(recorder.events.last == [100, 1, 99])
     }
 
-    tabBar.items?.insert(UITabBarItem(title: "Insert", image: nil, tag: 101), at: 1)
+    host.tabBar.items?.insert(UITabBarItem(title: "Insert", image: nil, tag: 101), at: 1)
+    host.layoutIfNeeded()
     expectedCount += 1
-    await Task.yield()
     #expect(recorder.events.count == expectedCount)
+    #expect(recorder.events.last == [100, 101, 1, 99])
 
-    _ = tabBar.items?.removeLast()
+    _ = host.tabBar.items?.removeLast()
+    host.layoutIfNeeded()
     expectedCount += 1
-    await Task.yield()
     #expect(recorder.events.count == expectedCount)
+    #expect(recorder.events.last == [100, 101, 1])
 }
 
 @Test("menuDelegate attaches long-press gestures")
@@ -491,6 +522,33 @@ func menuDelegateRefreshesLongPressGesturesWhenTabsChange() async {
     }
 }
 
+@Test("menuDelegate refreshes long-press gestures when viewControllers change")
+@MainActor
+func menuDelegateRefreshesLongPressGesturesWhenViewControllersChange() async {
+    let controller = UITabBarController()
+    controller.setViewControllers(makeViewControllers(count: 2), animated: false)
+    let host = WindowHost(rootViewController: controller)
+    let delegate = ViewControllerMenuDelegate()
+
+    controller.menuDelegate = delegate
+    let initialIndices = menuRecognizerIndices(in: controller.tabBar)
+
+    controller.setViewControllers(makeViewControllers(count: 4), animated: false)
+    controller.view.setNeedsLayout()
+    host.window.layoutIfNeeded()
+    await Task.yield()
+
+    let updatedIndices = menuRecognizerIndices(in: controller.tabBar)
+    let buttonViews = tabBarButtonViews(in: controller.tabBar)
+    let expectedCount = min(4, buttonViews.count)
+    let expectedIndices = Set(0..<expectedCount)
+
+    #expect(updatedIndices == expectedIndices)
+    if expectedCount > 0 {
+        #expect(updatedIndices != initialIndices)
+    }
+}
+
 @Test("menuDelegate clears long-press gestures when unset")
 @MainActor
 func menuDelegateClearsLongPressGesturesWhenUnset() async {
@@ -519,6 +577,59 @@ func menuDelegateDoesNotDuplicateLongPressGestures() async {
     let updatedIndices = menuRecognizerIndices(in: context.controller.tabBar)
 
     #expect(updatedIndices == initialIndices)
+}
+
+@Test("repeated layout passes do not duplicate long-press gestures")
+@MainActor
+func repeatedLayoutPassesDoNotDuplicateLongPressGestures() async {
+    let context = makeTabBarTestContext(tabCount: 3)
+    let delegate = TestMenuDelegate()
+
+    context.controller.menuDelegate = delegate
+    let initialRecognizers = menuLongPressRecognizers(in: context.controller.tabBar)
+    let initialIdentityCount = menuRecognizerIdentityCount(in: context.controller.tabBar)
+    let initialIdentitySet = menuRecognizerIdentitySet(in: context.controller.tabBar)
+
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+    await Task.yield()
+
+    let updatedRecognizers = menuLongPressRecognizers(in: context.controller.tabBar)
+    let updatedIdentityCount = menuRecognizerIdentityCount(in: context.controller.tabBar)
+    let updatedIdentitySet = menuRecognizerIdentitySet(in: context.controller.tabBar)
+
+    #expect(updatedRecognizers.count == initialRecognizers.count)
+    #expect(initialIdentityCount == initialRecognizers.count)
+    #expect(updatedIdentityCount == updatedRecognizers.count)
+    #expect(updatedIdentitySet == initialIdentitySet)
+}
+
+@Test("coordinator resolves current tab index from the source view")
+@MainActor
+func coordinatorResolvesCurrentTabIndexFromSourceView() async {
+    let context = makeTabBarTestContext(tabCount: 3)
+    let coordinator = TabBarMenuCoordinator()
+    let delegate = TestMenuDelegate()
+    coordinator.delegate = delegate
+    coordinator.attach(to: context.controller)
+
+    guard let recognizer = menuLongPressRecognizers(in: context.controller.tabBar).first,
+          let sourceView = recognizer.view else {
+        Issue.record("Expected a long-press recognizer attached to a tab view")
+        return
+    }
+
+    recognizer.tabIndex = 999
+    let resolvedIndex = coordinator.resolvedTabIndex(
+        for: recognizer,
+        sourceView: sourceView,
+        in: context.controller
+    )
+
+    #expect(resolvedIndex == 0)
+    #expect(recognizer.tabIndex == 0)
 }
 
 @Test("menuConfiguration applies minimumPressDuration")

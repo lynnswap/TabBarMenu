@@ -4,8 +4,7 @@
 #import <objc/runtime.h>
 
 static const char kMenuSubclassKey;
-static const char kItemsMutationDepthKey;
-static const char kItemsDidChangeHandlerKey;
+static const char kLayoutHandlerKey;
 static const char kSelectionHandlerKey;
 
 static NSString *const kSubclassPrefix = @"TabBarMenu_";
@@ -22,32 +21,7 @@ static SEL TBMDidSelectButtonForItemSelector(void)
     return selector;
 }
 
-static NSInteger TBMItemsMutationDepth(UITabBar *tabBar)
-{
-    NSNumber *value = objc_getAssociatedObject(tabBar, &kItemsMutationDepthKey);
-    return value ? value.integerValue : 0;
-}
-
-static void TBMSetItemsMutationDepth(UITabBar *tabBar, NSInteger depth)
-{
-    NSInteger clamped = depth < 0 ? 0 : depth;
-    objc_setAssociatedObject(tabBar, &kItemsMutationDepthKey, @(clamped), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-}
-
-static void TBMPerformItemsMutation(UITabBar *tabBar, void (^block)(void))
-{
-    TBMSetItemsMutationDepth(tabBar, TBMItemsMutationDepth(tabBar) + 1);
-    block();
-    TBMSetItemsMutationDepth(tabBar, TBMItemsMutationDepth(tabBar) - 1);
-    if (TBMItemsMutationDepth(tabBar) == 0) {
-        TBMItemsDidChangeHandler handler = objc_getAssociatedObject(tabBar, &kItemsDidChangeHandlerKey);
-        if (handler) {
-            handler(tabBar);
-        }
-    }
-}
-
-static void TBMCallSuperSetItems(id self, SEL _cmd, NSArray *items)
+static void TBMCallSuperLayoutSubviews(id self, SEL _cmd)
 {
     Class superClass = class_getSuperclass(object_getClass(self));
     if (!superClass) {
@@ -57,20 +31,7 @@ static void TBMCallSuperSetItems(id self, SEL _cmd, NSArray *items)
         .receiver = self,
         .super_class = superClass
     };
-    ((void (*)(struct objc_super *, SEL, NSArray *))objc_msgSendSuper)(&superInfo, _cmd, items);
-}
-
-static void TBMCallSuperSetItemsAnimated(id self, SEL _cmd, NSArray *items, BOOL animated)
-{
-    Class superClass = class_getSuperclass(object_getClass(self));
-    if (!superClass) {
-        return;
-    }
-    struct objc_super superInfo = {
-        .receiver = self,
-        .super_class = superClass
-    };
-    ((void (*)(struct objc_super *, SEL, NSArray *, BOOL))objc_msgSendSuper)(&superInfo, _cmd, items, animated);
+    ((void (*)(struct objc_super *, SEL))objc_msgSendSuper)(&superInfo, _cmd);
 }
 
 static void TBMCallSuperDidSelectButtonForItem(id self, SEL _cmd, id item)
@@ -86,18 +47,15 @@ static void TBMCallSuperDidSelectButtonForItem(id self, SEL _cmd, id item)
     ((void (*)(struct objc_super *, SEL, id))objc_msgSendSuper)(&superInfo, _cmd, item);
 }
 
-static void TBM_setItems(id self, SEL _cmd, NSArray *items)
+static void TBM_layoutSubviews(id self, SEL _cmd)
 {
-    TBMPerformItemsMutation((UITabBar *)self, ^{
-        TBMCallSuperSetItems(self, _cmd, items);
-    });
-}
+    TBMCallSuperLayoutSubviews(self, _cmd);
 
-static void TBM_setItemsAnimated(id self, SEL _cmd, NSArray *items, BOOL animated)
-{
-    TBMPerformItemsMutation((UITabBar *)self, ^{
-        TBMCallSuperSetItemsAnimated(self, _cmd, items, animated);
-    });
+    UITabBar *tabBar = (UITabBar *)self;
+    TBMLayoutHandler handler = objc_getAssociatedObject(tabBar, &kLayoutHandlerKey);
+    if (handler) {
+        handler(tabBar);
+    }
 }
 
 static void TBM_didSelectButtonForItem(id self, SEL _cmd, id item)
@@ -148,21 +106,16 @@ static Class TBMEnsureSubclass(UITabBar *tabBar)
     return subclass;
 }
 
-static void TBMAddItemsOverrides(Class subclass)
+static void TBMAddLayoutOverride(Class subclass)
 {
     Class baseClass = class_getSuperclass(subclass);
     if (!baseClass) {
         return;
     }
-    SEL itemsSelector = @selector(setItems:);
-    Method itemsMethod = class_getInstanceMethod(baseClass, itemsSelector);
-    if (itemsMethod) {
-        class_addMethod(subclass, itemsSelector, (IMP)TBM_setItems, method_getTypeEncoding(itemsMethod));
-    }
-    SEL setItemsAnimatedSelector = @selector(setItems:animated:);
-    Method setItemsAnimatedMethod = class_getInstanceMethod(baseClass, setItemsAnimatedSelector);
-    if (setItemsAnimatedMethod) {
-        class_addMethod(subclass, setItemsAnimatedSelector, (IMP)TBM_setItemsAnimated, method_getTypeEncoding(setItemsAnimatedMethod));
+    SEL selector = @selector(layoutSubviews);
+    Method method = class_getInstanceMethod(baseClass, selector);
+    if (method) {
+        class_addMethod(subclass, selector, (IMP)TBM_layoutSubviews, method_getTypeEncoding(method));
     }
 }
 
@@ -180,7 +133,7 @@ static void TBMAddSelectionOverride(Class subclass)
     class_addMethod(subclass, selector, (IMP)TBM_didSelectButtonForItem, method_getTypeEncoding(method));
 }
 
-void TBMInstallItemsOverrides(UITabBar *tabBar)
+void TBMInstallLayoutOverride(UITabBar *tabBar)
 {
     if (!tabBar) {
         return;
@@ -189,15 +142,15 @@ void TBMInstallItemsOverrides(UITabBar *tabBar)
     if (!subclass) {
         return;
     }
-    TBMAddItemsOverrides(subclass);
+    TBMAddLayoutOverride(subclass);
 }
 
-void TBMSetItemsDidChangeHandler(UITabBar *tabBar, TBMItemsDidChangeHandler handler)
+void TBMSetLayoutHandler(UITabBar *tabBar, TBMLayoutHandler handler)
 {
     if (!tabBar) {
         return;
     }
-    objc_setAssociatedObject(tabBar, &kItemsDidChangeHandlerKey, handler, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    objc_setAssociatedObject(tabBar, &kLayoutHandlerKey, handler, OBJC_ASSOCIATION_COPY_NONATOMIC);
 }
 
 void TBMInstallSelectionOverride(UITabBar *tabBar)
