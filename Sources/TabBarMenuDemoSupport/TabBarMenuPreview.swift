@@ -307,7 +307,11 @@ private final class TabBarMenuPreviewViewControllerController: TabBarMenuPreview
                 if !tabBarController.moreNavigationController.navigationBar.isHidden {
                     tabBarController.moreNavigationController.navigationBar.isHidden = true
                 }
-                tabBarController.selectedViewController = viewController
+                guard let viewControllers = tabBarController.viewControllers,
+                      let selectedIndex = viewControllers.firstIndex(where: { $0 === viewController }) else {
+                    return
+                }
+                tabBarController.selectedIndex = selectedIndex
             }
         }
         return UIMenu(children: actions)

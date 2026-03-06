@@ -208,11 +208,7 @@ private func tabBarControls(in view: UIView) -> [UIControl] {
 }
 @MainActor
 private func tabBarItemView(_ item: UITabBarItem) -> UIView? {
-    let selector = NSSelectorFromString("view")
-    guard item.responds(to: selector) else {
-        return nil
-    }
-    return item.perform(selector)?.takeUnretainedValue() as? UIView
+    ObjectiveCInterop.performObjectSelector("view", on: item) as? UIView
 }
 @MainActor
 private func tabBarButtonViews(in tabBar: UITabBar) -> [UIView] {

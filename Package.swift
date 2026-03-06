@@ -3,6 +3,12 @@
 
 import PackageDescription
 
+let strictSwiftSettings: [SwiftSetting] = [
+    .swiftLanguageMode(.v6),
+    .defaultIsolation(nil),
+    .strictMemorySafety(),
+]
+
 let package = Package(
     name: "TabBarMenu",
     platforms: [
@@ -28,15 +34,18 @@ let package = Package(
         ),
         .target(
             name: "TabBarMenu",
-            dependencies: ["TabBarMenuObjC"]
+            dependencies: ["TabBarMenuObjC"],
+            swiftSettings: strictSwiftSettings
         ),
         .target(
             name: "TabBarMenuDemoSupport",
-            dependencies: ["TabBarMenu"]
+            dependencies: ["TabBarMenu"],
+            swiftSettings: strictSwiftSettings
         ),
         .testTarget(
             name: "TabBarMenuTests",
-            dependencies: ["TabBarMenu"]
+            dependencies: ["TabBarMenu"],
+            swiftSettings: strictSwiftSettings
         ),
     ]
 )

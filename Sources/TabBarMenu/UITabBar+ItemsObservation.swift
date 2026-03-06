@@ -18,30 +18,33 @@ extension UITabBar {
 
     var tabBarMenuSelectionHandler: TabBarMenuSelectionHandler? {
         get {
-            objc_getAssociatedObject(self, &ItemsAssociatedKeys.selectionHandler) as? TabBarMenuSelectionHandler
+            ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.selectionHandler)
         }
         set {
             TBMInstallSelectionOverride(self)
-            objc_setAssociatedObject(
-                self,
-                &ItemsAssociatedKeys.selectionHandler,
+            ObjectiveCInterop.setAssociatedObject(
                 newValue,
-                .OBJC_ASSOCIATION_COPY_NONATOMIC
+                for: self,
+                key: &ItemsAssociatedKeys.selectionHandler,
+                policy: .OBJC_ASSOCIATION_COPY_NONATOMIC
             )
             TBMSetSelectionHandler(self, newValue)
         }
     }
 
     private var itemsDidChangeSubject: PassthroughSubject<[UITabBarItem], Never> {
-        if let subject = objc_getAssociatedObject(self, &ItemsAssociatedKeys.subject) as? PassthroughSubject<[UITabBarItem], Never> {
+        if let subject: PassthroughSubject<[UITabBarItem], Never> = ObjectiveCInterop.associatedObject(
+            for: self,
+            key: &ItemsAssociatedKeys.subject
+        ) {
             return subject
         }
         let subject = PassthroughSubject<[UITabBarItem], Never>()
-        objc_setAssociatedObject(
-            self,
-            &ItemsAssociatedKeys.subject,
+        ObjectiveCInterop.setAssociatedObject(
             subject,
-            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            for: self,
+            key: &ItemsAssociatedKeys.subject,
+            policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
         )
         return subject
     }

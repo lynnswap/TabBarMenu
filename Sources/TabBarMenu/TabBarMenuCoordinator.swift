@@ -500,11 +500,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     private func performSelector(_ name: String, on object: NSObject) -> AnyObject? {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return nil
-        }
-        return object.perform(selector)?.takeUnretainedValue()
+        ObjectiveCInterop.performObjectSelector(name, on: object)
     }
 }
 
