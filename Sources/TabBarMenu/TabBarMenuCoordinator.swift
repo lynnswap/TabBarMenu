@@ -1,8 +1,13 @@
 import UIKit
-import Combine
 
 @MainActor
 final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
+    private struct GestureSyncEntry: Equatable {
+        let viewID: ObjectIdentifier
+        let tabIndex: Int
+        let minimumPressDuration: TimeInterval
+    }
+
     private struct MoreMenuPresentation {
         let menu: UIMenu
         let sourceView: UIView
@@ -20,7 +25,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
 
     private weak var tabBarController: UITabBarController?
     private var menuHostButton: UIButton?
-    private var cancellables = Set<AnyCancellable>()
+    private var lastGestureSyncEntries: [GestureSyncEntry] = []
 
     @MainActor deinit {
         detach()
@@ -29,27 +34,29 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     func attach(to tabBarController: UITabBarController) {
         if self.tabBarController !== tabBarController {
             if let previousController = self.tabBarController {
-                stopObservingTabs()
                 let tabBar = previousController.tabBar
+                tabBar.tabBarMenuLayoutHandler = nil
                 removeMenuGestures(from: tabBar)
                 uninstallSelectionHandler(from: previousController)
             }
+            lastGestureSyncEntries = []
             menuHostButton?.removeFromSuperview()
             menuHostButton = nil
             self.tabBarController = tabBarController
-            startObservingTabs()
         }
+        installRuntimeBridges(on: tabBarController)
         refreshInteractions()
     }
 
     func detach() {
-        stopObservingTabs()
         if let tabBar = tabBarController?.tabBar {
+            tabBar.tabBarMenuLayoutHandler = nil
             removeMenuGestures(from: tabBar)
         }
         if let tabBarController {
             uninstallSelectionHandler(from: tabBarController)
         }
+        lastGestureSyncEntries = []
         menuHostButton?.removeFromSuperview()
         menuHostButton = nil
         tabBarController = nil
@@ -59,14 +66,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard let tabBarController else {
             return
         }
-        refreshSelectionHandler()
-
-        let tabBar = tabBarController.tabBar
-        removeMenuGestures(from: tabBar)
-        for (index, view) in tabBarIndexedViews(in: tabBar) {
-            let duration = longPressDuration(for: index, in: tabBarController)
-            addLongPress(to: view, tabIndex: index, minimumPressDuration: duration)
-        }
+        synchronizeMenuGestures(in: tabBarController)
     }
 
     @discardableResult
@@ -84,32 +84,18 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return true
     }
 
-    // MARK: - Observation
-
-    private func startObservingTabs() {
-        guard let tabBarController = tabBarController, cancellables.isEmpty else {
-            return
-        }
-        tabBarController.tabBar.itemsDidChangePublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                self.refreshInteractions()
-            }
-            .store(in: &cancellables)
-    }
-
-    private func stopObservingTabs() {
-        cancellables.removeAll()
-    }
-
     // MARK: - Selection handling
 
-    private func refreshSelectionHandler() {
-        guard let tabBarController else {
-            return
-        }
+    private func installRuntimeBridges(on tabBarController: UITabBarController) {
         let tabBar = tabBarController.tabBar
+        tabBar.tabBarMenuLayoutHandler = { [weak self] tabBar in
+            guard let self,
+                  let currentTabBarController = self.tabBarController,
+                  currentTabBarController.tabBar === tabBar else {
+                return
+            }
+            self.refreshInteractions()
+        }
         tabBar.tabBarMenuSelectionHandler = { [weak self, weak tabBarController] _, item in
             guard let self, let tabBarController else { return true }
             let requestCore = self.makeRequestCore()
@@ -145,6 +131,67 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
                 control.removeGestureRecognizer(recognizer)
             }
         }
+    }
+
+    private func synchronizeMenuGestures(in tabBarController: UITabBarController) {
+        let tabBar = tabBarController.tabBar
+        let indexedViews = tabBarIndexedViews(in: tabBar)
+        let syncEntries = indexedViews.map { index, view in
+            GestureSyncEntry(
+                viewID: ObjectIdentifier(view),
+                tabIndex: index,
+                minimumPressDuration: longPressDuration(for: index, in: tabBarController)
+            )
+        }
+
+        if syncEntries == lastGestureSyncEntries {
+            return
+        }
+
+        var existingRecognizersByView = menuRecognizersByView(in: tabBar)
+
+        for ((index, view), entry) in zip(indexedViews, syncEntries) {
+            let viewID = entry.viewID
+            let minimumPressDuration = entry.minimumPressDuration
+            let recognizers = existingRecognizersByView.removeValue(forKey: viewID) ?? []
+
+            if let recognizer = recognizers.first {
+                recognizer.tabIndex = index
+                recognizer.minimumPressDuration = minimumPressDuration
+                recognizer.cancelsTouchesInView = true
+                recognizer.delegate = self
+
+                for duplicate in recognizers.dropFirst() {
+                    view.removeGestureRecognizer(duplicate)
+                }
+            } else {
+                addLongPress(to: view, tabIndex: index, minimumPressDuration: minimumPressDuration)
+            }
+        }
+
+        for recognizers in existingRecognizersByView.values {
+            for recognizer in recognizers {
+                recognizer.view?.removeGestureRecognizer(recognizer)
+            }
+        }
+
+        lastGestureSyncEntries = syncEntries
+    }
+
+    private func menuRecognizersByView(in tabBar: UITabBar) -> [ObjectIdentifier: [TabBarMenuLongPressGestureRecognizer]] {
+        var recognizersByView: [ObjectIdentifier: [TabBarMenuLongPressGestureRecognizer]] = [:]
+
+        for control in tabBarControls(in: tabBar) {
+            let recognizers = (control.gestureRecognizers ?? []).compactMap { recognizer in
+                recognizer as? TabBarMenuLongPressGestureRecognizer
+            }
+            guard !recognizers.isEmpty else {
+                continue
+            }
+            recognizersByView[ObjectIdentifier(control)] = recognizers
+        }
+
+        return recognizersByView
     }
 
     // MARK: - Menu presentation
@@ -480,7 +527,16 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
               let longPressRecognizer = recognizer as? TabBarMenuLongPressGestureRecognizer else {
             return
         }
-        handleMenuTrigger(tabIndex: longPressRecognizer.tabIndex, sourceView: view, in: tabBarController)
+        if let currentTabIndex = resolvedTabIndex(for: longPressRecognizer, sourceView: view, in: tabBarController) {
+            handleMenuTrigger(tabIndex: currentTabIndex, sourceView: view, in: tabBarController)
+            return
+        }
+
+        refreshInteractions()
+        guard let currentTabIndex = resolvedTabIndex(for: longPressRecognizer, sourceView: view, in: tabBarController) else {
+            return
+        }
+        handleMenuTrigger(tabIndex: currentTabIndex, sourceView: view, in: tabBarController)
     }
 
     func gestureRecognizer(
@@ -499,12 +555,20 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return nil
     }
 
-    private func performSelector(_ name: String, on object: NSObject) -> AnyObject? {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
+    func resolvedTabIndex(
+        for recognizer: TabBarMenuLongPressGestureRecognizer,
+        sourceView: UIView,
+        in tabBarController: UITabBarController
+    ) -> Int? {
+        guard let currentTabIndex = tabBarIndexedViews(in: tabBarController.tabBar).first(where: { $0.1 === sourceView })?.0 else {
             return nil
         }
-        return object.perform(selector)?.takeUnretainedValue()
+        recognizer.tabIndex = currentTabIndex
+        return currentTabIndex
+    }
+
+    private func performSelector(_ name: String, on object: NSObject) -> AnyObject? {
+        ObjectiveCInterop.performObjectSelector(name, on: object)
     }
 }
 

@@ -1,54 +1,50 @@
 import UIKit
-import Combine
-import ObjectiveC.runtime
 import TabBarMenuObjC
 
 @MainActor
 extension UITabBar {
-    var itemsDidChangePublisher: AnyPublisher<[UITabBarItem], Never> {
-        TBMInstallItemsOverrides(self)
-        TBMSetItemsDidChangeHandler(self) { [weak self] _ in
-            guard let self else { return }
-            self.itemsDidChangeSubject.send(self.items ?? [])
-        }
-        return itemsDidChangeSubject.eraseToAnyPublisher()
-    }
-
+    typealias TabBarMenuLayoutHandler = (UITabBar) -> Void
     typealias TabBarMenuSelectionHandler = (UITabBar, UITabBarItem) -> Bool
+
+    var tabBarMenuLayoutHandler: TabBarMenuLayoutHandler? {
+        get {
+            ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.layoutHandler)
+        }
+        set {
+            if newValue != nil {
+                TBMInstallLayoutOverride(self)
+            }
+            ObjectiveCInterop.setAssociatedObject(
+                newValue,
+                for: self,
+                key: &ItemsAssociatedKeys.layoutHandler,
+                policy: .OBJC_ASSOCIATION_COPY_NONATOMIC
+            )
+            TBMSetLayoutHandler(self, newValue)
+        }
+    }
 
     var tabBarMenuSelectionHandler: TabBarMenuSelectionHandler? {
         get {
-            objc_getAssociatedObject(self, &ItemsAssociatedKeys.selectionHandler) as? TabBarMenuSelectionHandler
+            ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.selectionHandler)
         }
         set {
-            TBMInstallSelectionOverride(self)
-            objc_setAssociatedObject(
-                self,
-                &ItemsAssociatedKeys.selectionHandler,
+            if newValue != nil {
+                TBMInstallSelectionOverride(self)
+            }
+            ObjectiveCInterop.setAssociatedObject(
                 newValue,
-                .OBJC_ASSOCIATION_COPY_NONATOMIC
+                for: self,
+                key: &ItemsAssociatedKeys.selectionHandler,
+                policy: .OBJC_ASSOCIATION_COPY_NONATOMIC
             )
             TBMSetSelectionHandler(self, newValue)
         }
-    }
-
-    private var itemsDidChangeSubject: PassthroughSubject<[UITabBarItem], Never> {
-        if let subject = objc_getAssociatedObject(self, &ItemsAssociatedKeys.subject) as? PassthroughSubject<[UITabBarItem], Never> {
-            return subject
-        }
-        let subject = PassthroughSubject<[UITabBarItem], Never>()
-        objc_setAssociatedObject(
-            self,
-            &ItemsAssociatedKeys.subject,
-            subject,
-            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-        )
-        return subject
     }
 }
 
 @MainActor
 private enum ItemsAssociatedKeys {
-    static var subject = UInt8(0)
+    static var layoutHandler = UInt8(0)
     static var selectionHandler = UInt8(1)
 }

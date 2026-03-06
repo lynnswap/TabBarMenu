@@ -215,41 +215,46 @@ public extension UITabBarController {
 
     private var tabBarMenuCoordinator: TabBarMenuCoordinator? {
         get {
-            objc_getAssociatedObject(self, &TabBarMenuAssociatedKeys.coordinator) as? TabBarMenuCoordinator
+            ObjectiveCInterop.associatedObject(for: self, key: &TabBarMenuAssociatedKeys.coordinator)
         }
         set {
-            objc_setAssociatedObject(
-                self,
-                &TabBarMenuAssociatedKeys.coordinator,
+            ObjectiveCInterop.setAssociatedObject(
                 newValue,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+                for: self,
+                key: &TabBarMenuAssociatedKeys.coordinator,
+                policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
         }
     }
 
     private var tabBarMenuConfiguration: TabBarMenuConfiguration {
         get {
-            if let box = objc_getAssociatedObject(self, &TabBarMenuAssociatedKeys.configuration) as? TabBarMenuConfigurationBox {
+            if let box: TabBarMenuConfigurationBox = ObjectiveCInterop.associatedObject(
+                for: self,
+                key: &TabBarMenuAssociatedKeys.configuration
+            ) {
                 return box.value
             }
             let defaultValue = TabBarMenuConfiguration()
-            objc_setAssociatedObject(
-                self,
-                &TabBarMenuAssociatedKeys.configuration,
+            ObjectiveCInterop.setAssociatedObject(
                 TabBarMenuConfigurationBox(defaultValue),
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+                for: self,
+                key: &TabBarMenuAssociatedKeys.configuration,
+                policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
             return defaultValue
         }
         set {
-            let box = (objc_getAssociatedObject(self, &TabBarMenuAssociatedKeys.configuration) as? TabBarMenuConfigurationBox)
-                ?? TabBarMenuConfigurationBox(newValue)
+            let box = (ObjectiveCInterop.associatedObject(
+                for: self,
+                key: &TabBarMenuAssociatedKeys.configuration
+            ) as TabBarMenuConfigurationBox?) ?? TabBarMenuConfigurationBox(newValue)
             box.value = newValue
-            objc_setAssociatedObject(
-                self,
-                &TabBarMenuAssociatedKeys.configuration,
+            ObjectiveCInterop.setAssociatedObject(
                 box,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+                for: self,
+                key: &TabBarMenuAssociatedKeys.configuration,
+                policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
             tabBarMenuCoordinator?.configuration = newValue
         }
