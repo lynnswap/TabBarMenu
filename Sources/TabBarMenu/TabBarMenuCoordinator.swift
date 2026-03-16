@@ -105,14 +105,15 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             // Return false to cancel system selection when we presented a More menu.
             return self.handleMoreSelection(item, in: tabBarController, request: request) == false
         }
-        tabBar.tabBarMenuControlSelectionHandler = { [weak self, weak tabBarController] _, control in
+        tabBar.tabBarMenuControlSelectionHandler = { [weak self, weak tabBarController] tabBar, control in
             guard let self, let tabBarController else { return true }
             let requestCore = self.makeRequestCore()
             guard let request = self.moreMenuRequest(using: requestCore) else {
                 return true
             }
-            // Return false to cancel system selection when we presented a More menu.
-            return self.handleMoreSelection(control: control, in: tabBarController, request: request) == false
+            let result = self.handleMoreSelection(control: control, in: tabBarController, request: request)
+            tabBar.tabBarMenuControlSelectionDidHandle = result.didHandle
+            return result.shouldCallDefault
         }
     }
 
@@ -522,14 +523,14 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         control: UIControl,
         in tabBarController: UITabBarController,
         request: MoreMenuRequest? = nil
-    ) -> Bool {
+    ) -> (didHandle: Bool, shouldCallDefault: Bool) {
         guard let request = request ?? moreMenuRequest(using: makeRequestCore()),
               let moreTabIndex = request.moreTabStartIndex(in: tabBarController),
               let resolvedIndex = resolvedTabIndex(for: control, in: tabBarController),
               resolvedIndex == moreTabIndex else {
-            return false
+            return (false, true)
         }
-        return presentMoreMenu(request: request, in: tabBarController)
+        return presentMoreMenu(request: request, in: tabBarController) ? (true, false) : (true, true)
     }
 
     // MARK: - Long press

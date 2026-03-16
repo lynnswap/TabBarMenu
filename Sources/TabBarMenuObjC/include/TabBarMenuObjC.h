@@ -19,6 +19,7 @@ FOUNDATION_EXPORT void TBMSetLayoutHandler(UITabBar *tabBar, TBMLayoutHandler _N
 FOUNDATION_EXPORT TBMSelectionOverrideKind TBMInstallSelectionOverride(UITabBar *tabBar);
 FOUNDATION_EXPORT void TBMSetSelectionHandler(UITabBar *tabBar, TBMSelectionHandler _Nullable handler);
 FOUNDATION_EXPORT void TBMSetControlSelectionHandler(UITabBar *tabBar, TBMControlSelectionHandler _Nullable handler);
+FOUNDATION_EXPORT void TBMSetControlSelectionDidHandle(UITabBar *tabBar, BOOL didHandle);
 FOUNDATION_EXPORT void TBMSetPreferredSelectionOverrideKind(UITabBar *tabBar, TBMSelectionOverrideKind kind);
 
 NS_ASSUME_NONNULL_END

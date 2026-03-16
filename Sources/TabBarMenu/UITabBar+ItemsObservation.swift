@@ -57,6 +57,7 @@ extension UITabBar {
                 key: &ItemsAssociatedKeys.controlSelectionHandler,
                 policy: .OBJC_ASSOCIATION_COPY_NONATOMIC
             )
+            TBMSetControlSelectionDidHandle(self, false)
             TBMSetControlSelectionHandler(self, newValue)
         }
     }
@@ -101,6 +102,21 @@ extension UITabBar {
             tabBarMenuInstalledSelectionOverrideKind = installedKind
         }
     }
+
+    var tabBarMenuControlSelectionDidHandle: Bool {
+        get {
+            (ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.controlSelectionDidHandle) as NSNumber?)?.boolValue ?? false
+        }
+        set {
+            ObjectiveCInterop.setAssociatedObject(
+                NSNumber(value: newValue),
+                for: self,
+                key: &ItemsAssociatedKeys.controlSelectionDidHandle,
+                policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+            TBMSetControlSelectionDidHandle(self, newValue)
+        }
+    }
 }
 
 @MainActor
@@ -110,4 +126,5 @@ private enum ItemsAssociatedKeys {
     static var controlSelectionHandler = UInt8(2)
     static var selectionOverrideKind = UInt8(3)
     static var preferredSelectionOverrideKind = UInt8(4)
+    static var controlSelectionDidHandle = UInt8(5)
 }

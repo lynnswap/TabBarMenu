@@ -7,6 +7,7 @@ static const char kMenuSubclassKey;
 static const char kLayoutHandlerKey;
 static const char kSelectionHandlerKey;
 static const char kControlSelectionHandlerKey;
+static const char kControlSelectionDidHandleKey;
 static const char kSelectionOverrideKindKey;
 static const char kPreferredSelectionOverrideKindKey;
 static const char kSelectionBypassItemHookKey;
@@ -112,6 +113,11 @@ static void TBM_buttonUp(id self, SEL _cmd, id sender)
         TBMControlSelectionHandler handler = objc_getAssociatedObject(tabBar, &kControlSelectionHandlerKey);
         if (handler) {
             BOOL shouldCallDefault = handler(tabBar, (UIControl *)sender);
+            NSNumber *didHandle = objc_getAssociatedObject(tabBar, &kControlSelectionDidHandleKey);
+            if (didHandle.boolValue == NO) {
+                TBMCallSuperButtonUp(self, _cmd, sender);
+                return;
+            }
             if (shouldCallDefault == NO) {
                 objc_setAssociatedObject(tabBar, &kSelectionBypassItemHookKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                 return;
@@ -294,6 +300,14 @@ void TBMSetControlSelectionHandler(UITabBar *tabBar, TBMControlSelectionHandler 
         return;
     }
     objc_setAssociatedObject(tabBar, &kControlSelectionHandlerKey, handler, OBJC_ASSOCIATION_COPY_NONATOMIC);
+}
+
+void TBMSetControlSelectionDidHandle(UITabBar *tabBar, BOOL didHandle)
+{
+    if (!tabBar) {
+        return;
+    }
+    objc_setAssociatedObject(tabBar, &kControlSelectionDidHandleKey, @(didHandle), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 void TBMSetPreferredSelectionOverrideKind(UITabBar *tabBar, TBMSelectionOverrideKind kind)

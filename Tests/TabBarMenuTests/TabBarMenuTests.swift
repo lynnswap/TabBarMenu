@@ -928,6 +928,37 @@ func forcedButtonUpFallbackDoesNotInterceptNonMoreTabTaps() async {
     #expect(delegate.requestedTabsCount == 0)
 }
 
+@Test("unhandled buttonUp path preserves item-based More fallback")
+@MainActor
+func unhandledButtonUpPathPreservesItemBasedMoreFallback() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: UIMenu(children: []))
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let controlHandler = context.controller.tabBar.tabBarMenuControlSelectionHandler
+    let itemHandler = context.controller.tabBar.tabBarMenuSelectionHandler
+    #expect(controlHandler != nil)
+    #expect(itemHandler != nil)
+
+    let firstControl = firstVisibleTabControl(in: context.controller)
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(firstControl != nil)
+    #expect(moreItem != nil)
+
+    if let controlHandler, let itemHandler, let firstControl, let moreItem {
+        let shouldCallDefaultForControl = controlHandler(context.controller.tabBar, firstControl)
+        #expect(shouldCallDefaultForControl == true)
+
+        let shouldCallDefault = itemHandler(context.controller.tabBar, moreItem)
+        #expect(shouldCallDefault == false)
+    }
+
+    #expect(delegate.requestedTabsCount == 1)
+}
+
 @Test("coordinator reattaches to a different tab bar controller")
 @MainActor
 func coordinatorReattachesToDifferentTabBarController() async {
