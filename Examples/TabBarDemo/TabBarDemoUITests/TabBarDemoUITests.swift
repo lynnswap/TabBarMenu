@@ -40,12 +40,22 @@ final class TabBarDemoUITests: XCTestCase {
 
         let moreButton = buttons.element(boundBy: buttons.count - 1)
         XCTAssertTrue(moreButton.exists)
-        moreButton.press(forDuration: Timing.menuPress)
+        moreButton.tap()
 
-        let overflowItem = waitForMenuItem(named: "Extra 2", timeout: Timing.short)
+        let tappedOverflowItem = waitForMenuItem(named: "Extra 2", timeout: Timing.short)
+        XCTAssertTrue(tappedOverflowItem.exists)
+        tappedOverflowItem.tap()
+
+        XCTAssertTrue(tabBar.waitForExistence(timeout: Timing.ui))
+        let refreshedMoreButton = tabBar.buttons.element(boundBy: tabBar.buttons.count - 1)
+        XCTAssertTrue(refreshedMoreButton.exists)
+        refreshedMoreButton.press(forDuration: Timing.menuPress)
+
+        let overflowItem = waitForMenuItem(named: "Extra 1", timeout: Timing.short)
         XCTAssertTrue(overflowItem.exists)
         overflowItem.tap()
 
+        XCTAssertTrue(tabBar.waitForExistence(timeout: Timing.ui))
         let visibleTab = tabBar.buttons["Profile"]
         XCTAssertTrue(visibleTab.waitForExistence(timeout: Timing.ui))
 

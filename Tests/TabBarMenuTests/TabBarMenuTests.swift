@@ -312,6 +312,44 @@ private func moreTabBarItem(in tabBarController: UITabBarController) -> UITabBar
     return items[moreIndex]
 }
 
+@MainActor
+private func tabBarOrderedControls(in tabBar: UITabBar) -> [UIControl] {
+    let controls = tabBarFallbackControls(in: tabBar)
+    return controls.sorted { left, right in
+        let leftFrame = left.convert(left.bounds, to: tabBar)
+        let rightFrame = right.convert(right.bounds, to: tabBar)
+        return leftFrame.minX < rightFrame.minX
+    }
+}
+
+@MainActor
+private func moreTabBarControl(in tabBarController: UITabBarController) -> UIControl? {
+    let maxVisibleCount = tabBarController.menuConfiguration.maxVisibleTabCount
+    guard maxVisibleCount > 0 else {
+        return nil
+    }
+    let controls = tabBarOrderedControls(in: tabBarController.tabBar)
+    let moreIndex = maxVisibleCount - 1
+    guard controls.indices.contains(moreIndex) else {
+        return nil
+    }
+    return controls[moreIndex]
+}
+
+@MainActor
+private func firstVisibleTabControl(in tabBarController: UITabBarController) -> UIControl? {
+    tabBarOrderedControls(in: tabBarController.tabBar).first
+}
+
+@MainActor
+private func invokePrivateSelector(
+    _ name: String,
+    on object: NSObject,
+    argument: AnyObject?
+) {
+    unsafe _ = object.perform(NSSelectorFromString(name), with: argument)
+}
+
 @Test("layout handler runs when items are assigned and laid out")
 @MainActor
 func layoutHandlerRunsOnItemsAssignment() {
@@ -764,6 +802,113 @@ func moreTabSelectionConfiguresMenuPresentationWithNil() async {
     if let configuredTab = delegate.configuredTabs.first {
         #expect(configuredTab == nil)
     }
+}
+
+@Test("selection override installs an available runtime path")
+@MainActor
+func selectionOverrideInstallsAvailableRuntimePath() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: UIMenu(children: []))
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    #expect(context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind != .none)
+}
+
+@Test("dual runtime hooks do not duplicate More delegate requests")
+@MainActor
+func dualRuntimeHooksDoNotDuplicateMoreDelegateRequests() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: nil)
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let installedKind = context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind
+    guard installedKind == .didSelectButtonForItemAndButtonUp else {
+        #expect(installedKind != .none)
+        return
+    }
+
+    let moreControl = moreTabBarControl(in: context.controller)
+    #expect(moreControl != nil)
+    if let moreControl {
+        invokePrivateSelector("_buttonUp:", on: context.controller.tabBar, argument: moreControl)
+    }
+
+    #expect(delegate.requestedTabsCount == 1)
+}
+
+@Test("forced buttonUp fallback suppresses More default when menu is provided")
+@MainActor
+func forcedButtonUpFallbackSuppressesMoreDefaultWhenMenuIsProvided() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: UIMenu(children: []))
+    context.controller.tabBar.tabBarMenuPreferredSelectionOverrideKind = .buttonUp
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    #expect(context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind == .buttonUp)
+    let handler = context.controller.tabBar.tabBarMenuControlSelectionHandler
+    #expect(handler != nil)
+    let moreControl = moreTabBarControl(in: context.controller)
+    #expect(moreControl != nil)
+    if let handler, let moreControl {
+        let shouldCallDefault = handler(context.controller.tabBar, moreControl)
+        #expect(shouldCallDefault == false)
+    }
+    #expect(delegate.requestedTabsCount == 1)
+}
+
+@Test("forced buttonUp fallback allows More default when menu is absent")
+@MainActor
+func forcedButtonUpFallbackAllowsMoreDefaultWhenMenuIsAbsent() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: nil)
+    context.controller.tabBar.tabBarMenuPreferredSelectionOverrideKind = .buttonUp
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    #expect(context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind == .buttonUp)
+    let handler = context.controller.tabBar.tabBarMenuControlSelectionHandler
+    #expect(handler != nil)
+    let moreControl = moreTabBarControl(in: context.controller)
+    #expect(moreControl != nil)
+    if let handler, let moreControl {
+        let shouldCallDefault = handler(context.controller.tabBar, moreControl)
+        #expect(shouldCallDefault == true)
+    }
+    #expect(delegate.requestedTabsCount == 1)
+}
+
+@Test("forced buttonUp fallback does not intercept non-more tab taps")
+@MainActor
+func forcedButtonUpFallbackDoesNotInterceptNonMoreTabTaps() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: UIMenu(children: []))
+    context.controller.tabBar.tabBarMenuPreferredSelectionOverrideKind = .buttonUp
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    #expect(context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind == .buttonUp)
+    let handler = context.controller.tabBar.tabBarMenuControlSelectionHandler
+    #expect(handler != nil)
+    let firstControl = firstVisibleTabControl(in: context.controller)
+    #expect(firstControl != nil)
+    if let handler, let firstControl {
+        let shouldCallDefault = handler(context.controller.tabBar, firstControl)
+        #expect(shouldCallDefault == true)
+    }
+    #expect(delegate.requestedTabsCount == 0)
 }
 
 @Test("coordinator reattaches to a different tab bar controller")

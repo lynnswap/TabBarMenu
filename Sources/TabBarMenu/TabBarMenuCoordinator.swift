@@ -105,10 +105,20 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             // Return false to cancel system selection when we presented a More menu.
             return self.handleMoreSelection(item, in: tabBarController, request: request) == false
         }
+        tabBar.tabBarMenuControlSelectionHandler = { [weak self, weak tabBarController] _, control in
+            guard let self, let tabBarController else { return true }
+            let requestCore = self.makeRequestCore()
+            guard let request = self.moreMenuRequest(using: requestCore) else {
+                return true
+            }
+            // Return false to cancel system selection when we presented a More menu.
+            return self.handleMoreSelection(control: control, in: tabBarController, request: request) == false
+        }
     }
 
     private func uninstallSelectionHandler(from tabBarController: UITabBarController) {
         tabBarController.tabBar.tabBarMenuSelectionHandler = nil
+        tabBarController.tabBar.tabBarMenuControlSelectionHandler = nil
     }
 
     // MARK: - Gestures
@@ -508,6 +518,20 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return presentMoreMenu(request: request, in: tabBarController)
     }
 
+    private func handleMoreSelection(
+        control: UIControl,
+        in tabBarController: UITabBarController,
+        request: MoreMenuRequest? = nil
+    ) -> Bool {
+        guard let request = request ?? moreMenuRequest(using: makeRequestCore()),
+              let moreTabIndex = request.moreTabStartIndex(in: tabBarController),
+              let resolvedIndex = resolvedTabIndex(for: control, in: tabBarController),
+              resolvedIndex == moreTabIndex else {
+            return false
+        }
+        return presentMoreMenu(request: request, in: tabBarController)
+    }
+
     // MARK: - Long press
 
     private func handleMenuTrigger(tabIndex: Int, sourceView: UIView, in tabBarController: UITabBarController) {
@@ -560,11 +584,38 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         sourceView: UIView,
         in tabBarController: UITabBarController
     ) -> Int? {
-        guard let currentTabIndex = tabBarIndexedViews(in: tabBarController.tabBar).first(where: { $0.1 === sourceView })?.0 else {
+        guard let currentTabIndex = resolvedTabIndex(for: sourceView, in: tabBarController) else {
             return nil
         }
         recognizer.tabIndex = currentTabIndex
         return currentTabIndex
+    }
+
+    func resolvedTabIndex(for sourceView: UIView, in tabBarController: UITabBarController) -> Int? {
+        if let directMatch = tabBarIndexedViews(in: tabBarController.tabBar).first(where: { $0.1 === sourceView })?.0 {
+            return directMatch
+        }
+
+        guard let control = sourceView as? UIControl else {
+            return nil
+        }
+
+        let fallbackControls = tabBarFallbackControls(in: tabBarController.tabBar)
+        guard !fallbackControls.isEmpty else {
+            return nil
+        }
+
+        let isRTL = tabBarController.tabBar.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        let sortedControls = fallbackControls.sorted { left, right in
+            let leftFrame = left.convert(left.bounds, to: tabBarController.tabBar)
+            let rightFrame = right.convert(right.bounds, to: tabBarController.tabBar)
+            if isRTL {
+                return leftFrame.minX > rightFrame.minX
+            }
+            return leftFrame.minX < rightFrame.minX
+        }
+
+        return sortedControls.firstIndex(where: { $0 === control })
     }
 
     private func performSelector(_ name: String, on object: NSObject) -> AnyObject? {
