@@ -4,6 +4,8 @@
 `UITabBarController` tabs on **iOS 18+**. Works with the new `UITab` API and classic
 `viewControllers`, and can override the system **More** tab.
 
+> This package relies on undocumented APIs and runtime behavior, so extra care is needed before using it in App Store-bound projects.
+
 ![TabBarMenu preview](Docs/images/anchor-above.webp)
 
 ## Requirements
