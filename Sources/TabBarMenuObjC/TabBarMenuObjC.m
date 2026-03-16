@@ -243,7 +243,9 @@ TBMSelectionOverrideKind TBMInstallSelectionOverride(UITabBar *tabBar)
     BOOL installedDidSelectHook = NO;
     BOOL installedButtonUpHook = NO;
 
-    if (preferredKind == TBMSelectionOverrideKindDidSelectButtonForItem || preferredKind == TBMSelectionOverrideKindNone) {
+    if (preferredKind == TBMSelectionOverrideKindDidSelectButtonForItem ||
+        preferredKind == TBMSelectionOverrideKindDidSelectButtonForItemAndButtonUp ||
+        preferredKind == TBMSelectionOverrideKindNone) {
         installedDidSelectHook = TBMAddSelectionOverrideForSelector(
             subclass,
             TBMDidSelectButtonForItemSelector(),
@@ -251,7 +253,9 @@ TBMSelectionOverrideKind TBMInstallSelectionOverride(UITabBar *tabBar)
         );
     }
 
-    if (preferredKind == TBMSelectionOverrideKindButtonUp || preferredKind == TBMSelectionOverrideKindNone) {
+    if (preferredKind == TBMSelectionOverrideKindButtonUp ||
+        preferredKind == TBMSelectionOverrideKindDidSelectButtonForItemAndButtonUp ||
+        preferredKind == TBMSelectionOverrideKindNone) {
         installedButtonUpHook = TBMAddSelectionOverrideForSelector(
             subclass,
             TBMButtonUpSelector(),

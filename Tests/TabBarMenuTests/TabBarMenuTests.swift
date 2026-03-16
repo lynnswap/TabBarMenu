@@ -865,6 +865,23 @@ func forcedButtonUpFallbackSuppressesMoreDefaultWhenMenuIsProvided() async {
     #expect(delegate.requestedTabsCount == 1)
 }
 
+@Test("combined preferred hook kind installs both runtime paths")
+@MainActor
+func combinedPreferredHookKindInstallsBothRuntimePaths() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: UIMenu(children: []))
+    context.controller.tabBar.tabBarMenuPreferredSelectionOverrideKind = .didSelectButtonForItemAndButtonUp
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let installedKind = context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind
+    #expect(installedKind == .didSelectButtonForItemAndButtonUp || installedKind == .buttonUp)
+    #expect(context.controller.tabBar.tabBarMenuSelectionHandler != nil)
+    #expect(context.controller.tabBar.tabBarMenuControlSelectionHandler != nil)
+}
+
 @Test("forced buttonUp fallback allows More default when menu is absent")
 @MainActor
 func forcedButtonUpFallbackAllowsMoreDefaultWhenMenuIsAbsent() async {
