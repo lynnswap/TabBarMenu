@@ -65,6 +65,10 @@ package enum UITabRuntimeMethodNames {
         ["Controllers", "View", "displayed", "_"].runtimeMethodName
     }()
 
+    package static let setDisplayedViewControllers: String = {
+        ["Controllers:", "View", "Displayed", "set", "_"].runtimeMethodName
+    }()
+
     package static let isMoreTab: String = {
         ["Tab", "More", "is", "_"].runtimeMethodName
     }()

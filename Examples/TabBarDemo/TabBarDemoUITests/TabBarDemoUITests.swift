@@ -46,7 +46,7 @@ final class TabBarDemoUITests: XCTestCase {
         XCTAssertTrue(moreButton.exists)
         moreButton.tap()
 
-        let tappedOverflowItem = waitForMenuItem(named: "Extra 2", timeout: Timing.short)
+        let tappedOverflowItem = waitForMoreMenuItem(named: "Extra 2", in: tabBar, timeout: Timing.short)
         XCTAssertTrue(tappedOverflowItem.exists)
         tappedOverflowItem.tap()
 
@@ -62,20 +62,15 @@ final class TabBarDemoUITests: XCTestCase {
         XCTAssertTrue(refreshedMoreButton.exists)
         refreshedMoreButton.tap()
 
-        let overflowItem = waitForMenuItem(named: "Extra 1", timeout: Timing.short)
+        let overflowItem = waitForMoreMenuItem(named: "Extra 3", in: tabBar, timeout: Timing.short)
         XCTAssertTrue(overflowItem.exists)
         overflowItem.tap()
 
         XCTAssertTrue(tabBar.waitForExistence(timeout: Timing.ui))
-        let visibleTab = tabBar.buttons["Profile"]
-        XCTAssertTrue(visibleTab.waitForExistence(timeout: Timing.ui))
-
-        visibleTab.press(forDuration: Timing.menuPress)
-        let deleteAction = waitForMenuItem(named: "Delete", timeout: Timing.short)
-        XCTAssertTrue(deleteAction.exists)
-        deleteAction.tap()
-
-        XCTAssertTrue(waitForElementToDisappear(visibleTab, timeout: Timing.ui))
+        assertContentTitle("Extra 3")
+        assertVisibleTitleCount("Extra 3", expected: 1)
+        assertLastTabBarButtonTitle("More", in: tabBar)
+        XCTAssertFalse(app.staticTexts["More"].exists)
     }
 
     @MainActor
@@ -95,7 +90,7 @@ final class TabBarDemoUITests: XCTestCase {
         XCTAssertTrue(moreButton.exists)
         moreButton.tap()
 
-        let overflowItem = waitForMenuItem(named: "Extra 2", timeout: Timing.short)
+        let overflowItem = waitForMoreMenuItem(named: "Extra 2", in: tabBar, timeout: Timing.short)
         XCTAssertTrue(overflowItem.exists)
         overflowItem.tap()
 
@@ -110,7 +105,7 @@ final class TabBarDemoUITests: XCTestCase {
         let refreshedMoreButton = lastTabBarButton(in: tabBar)
         XCTAssertTrue(refreshedMoreButton.exists)
         refreshedMoreButton.tap()
-        XCTAssertTrue(waitForMenuItem(named: "Extra 3", timeout: Timing.short).exists)
+        XCTAssertTrue(waitForMoreMenuItem(named: "Extra 3", in: tabBar, timeout: Timing.short).exists)
     }
 
     @MainActor
@@ -235,6 +230,38 @@ final class TabBarDemoUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         return menuItem.exists ? menuItem : button
+    }
+
+    @MainActor
+    @discardableResult
+    private func waitForMoreMenuItem(
+        named title: String,
+        in tabBar: XCUIElement,
+        timeout: TimeInterval
+    ) -> XCUIElement {
+        let predicate = NSPredicate(format: "label == %@", title)
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if app.menuItems[title].exists {
+                return app.menuItems[title]
+            }
+
+            let buttonQuery = app.buttons.matching(predicate)
+            for index in 0..<buttonQuery.count {
+                let candidate = buttonQuery.element(boundBy: index)
+                guard candidate.exists else {
+                    continue
+                }
+                let frame = candidate.frame
+                if frame.isEmpty == false, frame.maxY < tabBar.frame.minY {
+                    return candidate
+                }
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        return waitForMenuItem(named: title, timeout: 0)
     }
 
     @MainActor

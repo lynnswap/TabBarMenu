@@ -17,7 +17,7 @@ public extension UITabBarController {
             if self.isOverflowItemIndex(index, totalCount: self.tabs.count) {
                 _ = self.selectOverflowTabContent(
                     resolvedViewController,
-                    syncedMoreItem: self.currentMoreTabBarItem(),
+                    syncedMoreItem: self.syncedMoreTabBarItemForOverflowSelection(),
                     sourceTab: tab
                 )
                 return
@@ -50,7 +50,7 @@ public extension UITabBarController {
             if self.isOverflowItemIndex(index, totalCount: viewControllers.count) {
                 _ = self.selectOverflowTabContent(
                     viewController,
-                    syncedMoreItem: self.currentMoreTabBarItem(),
+                    syncedMoreItem: self.syncedMoreTabBarItemForOverflowSelection(),
                     sourceTab: self.matchingTab(for: viewController)
                 )
                 return
@@ -93,20 +93,28 @@ extension UITabBarController {
     }
 
     func tabBarMenuDidSelectTab(_ tab: UITab, previousTab: UITab?) {
+        guard !isReplacingUITabOverflowSelection else {
+            return
+        }
         guard let state = uiTabOverflowPresentationState else {
             return
         }
-        guard tab !== state.sourceTab else {
+        guard tab !== state.sourceTab,
+              tab !== state.moreTabElement else {
             return
         }
         scheduleUITabOverflowCleanupAfterSelection()
     }
 
     func tabBarMenuDidSelectViewController(_ viewController: UIViewController) {
+        guard !isReplacingUITabOverflowSelection else {
+            return
+        }
         guard let state = uiTabOverflowPresentationState else {
             return
         }
-        guard state.targetViewController !== viewController else {
+        guard state.targetViewController !== viewController,
+              viewController !== moreNavigationController else {
             return
         }
         scheduleUITabOverflowCleanupAfterSelection()
@@ -179,7 +187,9 @@ extension UITabBarController {
         syncedMoreItem: UITabBarItem?,
         sourceTab: UITab?
     ) -> Bool {
-        guard let moreItem = syncedMoreItem ?? currentMoreTabBarItem() else {
+        guard let moreItem = syncedMoreItem
+            ?? uiTabOverflowPresentationState?.preservedMoreItem
+            ?? currentMoreTabBarItem() else {
             return false
         }
 
@@ -219,12 +229,26 @@ extension UITabBarController {
         sourceTab: UITab,
         syncedMoreItem: UITabBarItem
     ) -> Bool {
-        _ = dismissTabBarMenuTransientOverflowIfNeeded()
-        cleanupMoreNavigationControllerState()
+        let isReplacingActiveUITabOverflow = uiTabOverflowPresentationState != nil
+        let previousState = uiTabOverflowPresentationState
+
+        if currentTransientViewController() != nil {
+            _ = setTransientViewControllerPrivately(nil, animated: false)
+            cleanupMoreNavigationControllerState()
+        } else if !isReplacingActiveUITabOverflow {
+            cleanupMoreNavigationControllerState()
+        }
 
         guard let moreTabElement = resolvedMoreTabElement(),
               let preparedViewController = preparedMoreViewController(for: viewController) else {
             return false
+        }
+
+        if let previousState, previousState.sourceTab !== sourceTab {
+            restoreDisplayedViewControllers(
+                from: previousState.originalDisplayedViewControllers,
+                to: previousState.sourceTab
+            )
         }
 
         uiTabOverflowPresentationState = UITabOverflowPresentationState(
@@ -232,20 +256,79 @@ extension UITabBarController {
             moreTabElement: moreTabElement,
             targetViewController: viewController,
             preparedDisplayedViewControllers: [preparedViewController],
-            originalDisplayedViewControllers: displayedViewControllers(for: sourceTab) as NSArray,
+            originalDisplayedViewControllers: previousState?.sourceTab === sourceTab
+                ? (previousState?.originalDisplayedViewControllers ?? [])
+                : displayedViewControllers(for: sourceTab) as NSArray,
+            originalMoreDisplayedViewControllers: previousState?.originalMoreDisplayedViewControllers
+                ?? displayedViewControllers(for: moreTabElement) as NSArray,
             preservedMoreItem: syncedMoreItem
         )
 
-        let didSelectTab =
-            ObjectiveCInterop.performVoidSelector(
-                UITabBarControllerRuntimeMethodNames.selectTabElementIfPossible,
-                on: self,
-                with: sourceTab
-            ) || ObjectiveCInterop.performVoidSelector(
-                UITabBarControllerRuntimeMethodNames.setSelectedTab,
-                on: self,
-                with: sourceTab
+        let applyPreparedOverflowPresentation: @MainActor () -> Void = {
+            guard let state = self.uiTabOverflowPresentationState,
+                  state.sourceTab === sourceTab,
+                  state.moreTabElement === moreTabElement else {
+                return
+            }
+            self.setDisplayedViewControllers(
+                state.preparedDisplayedViewControllers,
+                for: state.sourceTab
             )
+            self.setDisplayedViewControllers(
+                state.preparedDisplayedViewControllers,
+                for: state.moreTabElement
+            )
+            self.moreNavigationController.setViewControllers(state.preparedDisplayedViewControllers, animated: false)
+            _ = ObjectiveCInterop.performVoidSelector(
+                UIMoreNavigationControllerRuntimeMethodNames.setDisplayedViewController,
+                on: self.moreNavigationController,
+                with: state.preparedDisplayedViewControllers.last
+            )
+            self.disableInteractivePopForUITabOverflow(using: state)
+            self.restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
+        }
+
+        let finishOverflowReplacement: @MainActor () -> Void = {
+            self.isReplacingUITabOverflowSelection = false
+        }
+
+        if isReplacingActiveUITabOverflow {
+            isReplacingUITabOverflowSelection = true
+            applyPreparedOverflowPresentation()
+            if self.currentSelectedTabElement() !== moreTabElement {
+                _ = ObjectiveCInterop.performVoidSelector(
+                    UITabBarControllerRuntimeMethodNames.selectTabElementIfPossible,
+                    on: self,
+                    with: moreTabElement
+                ) || ObjectiveCInterop.performVoidSelector(
+                    UITabBarControllerRuntimeMethodNames.setSelectedTab,
+                    on: self,
+                    with: moreTabElement
+                )
+            }
+            DispatchQueue.main.async {
+                applyPreparedOverflowPresentation()
+                finishOverflowReplacement()
+            }
+            return true
+        }
+
+        let needsSelectionTransition = currentSelectedTabElement() !== sourceTab
+        let didSelectTab: Bool
+        if !needsSelectionTransition {
+            didSelectTab = true
+        } else {
+            didSelectTab =
+                ObjectiveCInterop.performVoidSelector(
+                    UITabBarControllerRuntimeMethodNames.selectTabElementIfPossible,
+                    on: self,
+                    with: sourceTab
+                ) || ObjectiveCInterop.performVoidSelector(
+                    UITabBarControllerRuntimeMethodNames.setSelectedTab,
+                    on: self,
+                    with: sourceTab
+                )
+        }
         if !didSelectTab {
             uiTabOverflowPresentationState = nil
             return false
@@ -253,13 +336,7 @@ extension UITabBarController {
 
         restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
         DispatchQueue.main.async {
-            guard let state = self.uiTabOverflowPresentationState,
-                  state.sourceTab === sourceTab else {
-                return
-            }
-            self.moreNavigationController.setViewControllers(state.preparedDisplayedViewControllers, animated: false)
-            self.disableInteractivePopForUITabOverflow(using: state)
-            self.restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
+            applyPreparedOverflowPresentation()
         }
         return true
     }
@@ -353,6 +430,17 @@ extension UITabBarController {
         ) as? [UIViewController]) ?? []
     }
 
+    private func setDisplayedViewControllers(
+        _ viewControllers: [UIViewController],
+        for tab: UITab
+    ) {
+        _ = ObjectiveCInterop.performVoidSelector(
+            UITabRuntimeMethodNames.setDisplayedViewControllers,
+            on: tab,
+            with: viewControllers as NSArray
+        )
+    }
+
     private func isMoreTabElement(_ tab: UITab) -> Bool {
         ObjectiveCInterop.performBoolSelector(
             UITabRuntimeMethodNames.isMoreTab,
@@ -368,9 +456,7 @@ extension UITabBarController {
     }
 
     private func scheduleTabContentSelection(_ action: @escaping @MainActor () -> Void) {
-        DispatchQueue.main.async {
-            action()
-        }
+        action()
     }
 
     private func isOverflowItemIndex(_ index: Int, totalCount: Int) -> Bool {
@@ -469,8 +555,16 @@ extension UITabBarController {
         return items[moreIndex]
     }
 
+    private func syncedMoreTabBarItemForOverflowSelection() -> UITabBarItem? {
+        uiTabOverflowPresentationState?.preservedMoreItem ?? currentMoreTabBarItem()
+    }
+
     private func restoreUITabOverflowDisplayedViewControllersIfNeeded() {
-        // The UITab overflow path relies on the delegate override instead of mutating tab state.
+        guard let state = uiTabOverflowPresentationState else {
+            return
+        }
+        restoreDisplayedViewControllers(from: state.originalDisplayedViewControllers, to: state.sourceTab)
+        restoreDisplayedViewControllers(from: state.originalMoreDisplayedViewControllers, to: state.moreTabElement)
     }
 
     private func disableInteractivePopForUITabOverflow(using state: UITabOverflowPresentationState) {
@@ -544,6 +638,14 @@ extension UITabBarController {
         return viewController
     }
 
+    private func restoreDisplayedViewControllers(
+        from originalDisplayedViewControllers: NSArray,
+        to tab: UITab
+    ) {
+        let originalViewControllers = originalDisplayedViewControllers.compactMap { $0 as? UIViewController }
+        setDisplayedViewControllers(originalViewControllers, for: tab)
+    }
+
     private var uiTabOverflowPresentationState: UITabOverflowPresentationState? {
         get {
             ObjectiveCInterop.associatedObject(
@@ -560,6 +662,23 @@ extension UITabBarController {
             )
         }
     }
+
+    private var isReplacingUITabOverflowSelection: Bool {
+        get {
+            (ObjectiveCInterop.associatedObject(
+                for: self,
+                key: &MoreSelectionAssociatedKeys.isReplacingUITabOverflowSelection
+            ) as NSNumber?)?.boolValue ?? false
+        }
+        set {
+            ObjectiveCInterop.setAssociatedObject(
+                NSNumber(value: newValue),
+                for: self,
+                key: &MoreSelectionAssociatedKeys.isReplacingUITabOverflowSelection,
+                policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+    }
 }
 
 private final class UITabOverflowPresentationState {
@@ -568,6 +687,7 @@ private final class UITabOverflowPresentationState {
     let targetViewController: UIViewController
     let preparedDisplayedViewControllers: [UIViewController]
     let originalDisplayedViewControllers: NSArray
+    let originalMoreDisplayedViewControllers: NSArray
     let preservedMoreItem: UITabBarItem
 
     init(
@@ -576,6 +696,7 @@ private final class UITabOverflowPresentationState {
         targetViewController: UIViewController,
         preparedDisplayedViewControllers: [UIViewController],
         originalDisplayedViewControllers: NSArray,
+        originalMoreDisplayedViewControllers: NSArray,
         preservedMoreItem: UITabBarItem
     ) {
         self.sourceTab = sourceTab
@@ -583,6 +704,7 @@ private final class UITabOverflowPresentationState {
         self.targetViewController = targetViewController
         self.preparedDisplayedViewControllers = preparedDisplayedViewControllers
         self.originalDisplayedViewControllers = originalDisplayedViewControllers
+        self.originalMoreDisplayedViewControllers = originalMoreDisplayedViewControllers
         self.preservedMoreItem = preservedMoreItem
     }
 }
@@ -590,4 +712,6 @@ private final class UITabOverflowPresentationState {
 private enum MoreSelectionAssociatedKeys {
     @MainActor
     static var uiTabOverflowPresentationState = UInt8(0)
+    @MainActor
+    static var isReplacingUITabOverflowSelection = UInt8(0)
 }

@@ -661,7 +661,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     func resolvedTabIndex(for sourceView: UIView, in tabBarController: UITabBarController) -> Int? {
-        if let directMatch = tabBarIndexedViews(in: tabBarController.tabBar).first(where: { $0.1 === sourceView })?.0 {
+        let prefersFallbackOrdering = tabBarController.tabBarMenuHasActiveUITabMoreSelection
+        if !prefersFallbackOrdering,
+           let directMatch = tabBarIndexedViews(in: tabBarController.tabBar).first(where: { $0.1 === sourceView })?.0 {
             return directMatch
         }
 
