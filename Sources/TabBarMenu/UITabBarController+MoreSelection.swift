@@ -1,4 +1,5 @@
 import UIKit
+import ObjectiveC
 
 @MainActor
 public extension UITabBarController {
@@ -75,8 +76,11 @@ extension UITabBarController {
         currentTransientViewController() != nil
     }
 
-    var tabBarMenuHasActiveUITabMoreSelection: Bool {
-        uiTabOverflowPresentationState != nil
+    nonisolated var tabBarMenuHasActiveUITabMoreSelection: Bool {
+        unsafe objc_getAssociatedObject(
+            self,
+            &MoreSelectionAssociatedKeys.uiTabOverflowPresentationState
+        ) != nil
     }
 
     func tabBarMenuDisplayedViewControllersOverride(
@@ -648,13 +652,13 @@ extension UITabBarController {
 
     private var uiTabOverflowPresentationState: UITabOverflowPresentationState? {
         get {
-            ObjectiveCInterop.associatedObject(
+            unsafe ObjectiveCInterop.associatedObject(
                 for: self,
                 key: &MoreSelectionAssociatedKeys.uiTabOverflowPresentationState
             )
         }
         set {
-            ObjectiveCInterop.setAssociatedObject(
+            unsafe ObjectiveCInterop.setAssociatedObject(
                 newValue,
                 for: self,
                 key: &MoreSelectionAssociatedKeys.uiTabOverflowPresentationState,
@@ -665,13 +669,13 @@ extension UITabBarController {
 
     private var isReplacingUITabOverflowSelection: Bool {
         get {
-            (ObjectiveCInterop.associatedObject(
+            unsafe (ObjectiveCInterop.associatedObject(
                 for: self,
                 key: &MoreSelectionAssociatedKeys.isReplacingUITabOverflowSelection
             ) as NSNumber?)?.boolValue ?? false
         }
         set {
-            ObjectiveCInterop.setAssociatedObject(
+            unsafe ObjectiveCInterop.setAssociatedObject(
                 NSNumber(value: newValue),
                 for: self,
                 key: &MoreSelectionAssociatedKeys.isReplacingUITabOverflowSelection,
@@ -710,8 +714,8 @@ private final class UITabOverflowPresentationState {
 }
 
 private enum MoreSelectionAssociatedKeys {
-    @MainActor
+    nonisolated(unsafe)
     static var uiTabOverflowPresentationState = UInt8(0)
-    @MainActor
+    nonisolated(unsafe)
     static var isReplacingUITabOverflowSelection = UInt8(0)
 }

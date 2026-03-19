@@ -1,19 +1,33 @@
 import UIKit
 
 final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControllerDelegate {
-    weak var tabBarController: UITabBarController?
-    weak var originalDelegate: (NSObject & UITabBarControllerDelegate)?
+    nonisolated(unsafe) weak var forwardedTabBarController: UITabBarController?
+    weak var tabBarController: UITabBarController? {
+        didSet {
+            unsafe forwardedTabBarController = tabBarController
+        }
+    }
+    // Objective-C selector introspection reaches these NSObject overrides outside Swift actor isolation.
+    nonisolated(unsafe) weak var forwardedDelegate: NSObject?
+    weak var originalDelegate: (NSObject & UITabBarControllerDelegate)? {
+        didSet {
+            unsafe forwardedDelegate = originalDelegate
+        }
+    }
 
     override func responds(to aSelector: Selector!) -> Bool {
         guard let aSelector else {
             return false
         }
+        let superResponds = super.responds(to: aSelector)
+        let delegate = unsafe forwardedDelegate
+        let delegateResponds = delegate?.responds(to: aSelector) ?? false
         if aSelector == UITabBarControllerDelegateRuntimeMethods.displayedViewControllersForTab {
-            return (tabBarController?.tabBarMenuHasActiveUITabMoreSelection ?? false)
-                || (originalDelegate?.responds(to: aSelector) ?? false)
-                || super.responds(to: aSelector)
+            let controller = unsafe forwardedTabBarController
+            let hasActiveMoreSelection = controller?.tabBarMenuHasActiveUITabMoreSelection ?? false
+            return hasActiveMoreSelection || delegateResponds || superResponds
         }
-        return super.responds(to: aSelector) || (originalDelegate?.responds(to: aSelector) ?? false)
+        return superResponds || delegateResponds
     }
 
     override func forwardingTarget(for aSelector: Selector!) -> Any? {
@@ -23,8 +37,9 @@ final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControlle
         if aSelector == UITabBarControllerDelegateRuntimeMethods.displayedViewControllersForTab {
             return nil
         }
-        if let originalDelegate, originalDelegate.responds(to: aSelector) {
-            return originalDelegate
+        let delegate = unsafe forwardedDelegate
+        if let delegate, delegate.responds(to: aSelector) {
+            return delegate
         }
         return super.forwardingTarget(for: aSelector)
     }
