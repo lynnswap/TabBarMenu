@@ -47,6 +47,7 @@ final class TabBarDemoUITests: XCTestCase {
         tappedOverflowItem.tap()
 
         XCTAssertTrue(tabBar.waitForExistence(timeout: Timing.ui))
+        assertContentTitle("Extra 2")
         let refreshedMoreButton = tabBar.buttons.element(boundBy: tabBar.buttons.count - 1)
         XCTAssertTrue(refreshedMoreButton.exists)
         refreshedMoreButton.press(forDuration: Timing.menuPress)
@@ -115,6 +116,13 @@ final class TabBarDemoUITests: XCTestCase {
         if isSwitchOn(searchToggle) != isEnabled {
             searchToggle.tap()
         }
+    }
+
+    @MainActor
+    private func assertContentTitle(_ title: String) {
+        let label = app.staticTexts["sample-tab-title"].firstMatch
+        XCTAssertTrue(label.waitForExistence(timeout: Timing.ui))
+        XCTAssertEqual(label.label, title)
     }
 
     @MainActor

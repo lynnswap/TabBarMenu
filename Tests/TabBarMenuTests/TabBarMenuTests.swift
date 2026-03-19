@@ -213,6 +213,27 @@ private func makeTabBarTestContext(tabCount: Int) -> TabBarTestContext {
     let host = WindowHost(rootViewController: controller)
     return TabBarTestContext(controller: controller, host: host, tabs: tabs)
 }
+
+@Test("UITab resolves a More-selection view controller")
+@MainActor
+func uitabResolvesMoreSelectionViewController() async {
+    let tab = UITab(
+        title: "Resolved",
+        image: nil,
+        identifier: "resolved.tab",
+        viewControllerProvider: { _ in
+            let controller = UIViewController()
+            controller.title = "Resolved"
+            return controller
+        }
+    )
+
+    let viewController = tab.resolvedMoreSelectionViewController
+
+    #expect(viewController != nil)
+    #expect(viewController?.title == "Resolved")
+}
+
 @MainActor
 private func tabBarControls(in view: UIView) -> [UIControl] {
     var result: [UIControl] = []
