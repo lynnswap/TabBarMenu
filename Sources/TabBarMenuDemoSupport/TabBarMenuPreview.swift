@@ -252,14 +252,20 @@ private final class TabBarMenuPreviewUITabController: TabBarMenuPreviewBaseContr
         }
         let actions = tabs.map { tab in
             let title = tab.title.isEmpty ? "Untitled" : tab.title
-            return UIAction(title: title, image: tab.image) { [weak tab] _ in
-                guard let tab, let tabBarController = tab.tabBarController else {
+            return UIAction(title: title, image: tab.image) { [weak self, weak tab] _ in
+                guard let self, let tab, let tabBarController = tab.tabBarController else {
                     return
                 }
                 if !tabBarController.moreNavigationController.navigationBar.isHidden {
                     tabBarController.moreNavigationController.navigationBar.isHidden = true
                 }
-                tabBarController.selectedTab = tab
+                // MARK: Workaround for iOS 18 More-tab selection
+                // `selectedTab` does not reliably switch overflow UITab content.
+                if #available(iOS 26.0, *) {
+                    tabBarController.selectedTab = tab
+                } else if let viewController = tab.resolvedMoreSelectionViewController {
+                    tabBarController.selectedViewController = viewController
+                }
             }
         }
         return UIMenu(children: actions)
@@ -348,6 +354,7 @@ private struct SampleTabView: View {
         ContentUnavailableView {
             Label {
                 Text(title)
+                    .accessibilityIdentifier("sample-tab-title")
             } icon: {
                 Image(systemName: systemImage)
                     .symbolVariant(.fill)
