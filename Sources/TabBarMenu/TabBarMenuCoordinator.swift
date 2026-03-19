@@ -119,14 +119,17 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
                 }
                 return true
             }
+            let matchedMoreItem = request.matches(item: item, in: tabBarController)
             // Return false to cancel system selection when we presented a More menu.
-            let didPresentMenu = self.handleMoreSelection(item, in: tabBarController, request: request)
+            let didPresentMenu = matchedMoreItem
+                && self.handleMoreSelection(item, in: tabBarController, request: request)
             if didPresentMenu {
                 return false
             }
-            if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
-                _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
-            }
+            self.dismissTransientOverflowIfNeeded(
+                in: tabBarController,
+                allowingDefaultMoreSelection: matchedMoreItem
+            )
             return true
         }
         tabBar.tabBarMenuControlSelectionHandler = { [weak self, weak tabBarController] tabBar, control in
@@ -148,10 +151,16 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             }
             let result = self.handleMoreSelection(control: control, in: tabBarController, request: request)
             tabBar.tabBarMenuControlSelectionDidHandle = result.didHandle
-            if !result.didHandle && tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
-                _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
-            } else if result.didHandle && result.shouldCallDefault && tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
-                _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
+            if result.didHandle && result.shouldCallDefault {
+                self.dismissTransientOverflowIfNeeded(
+                    in: tabBarController,
+                    allowingDefaultMoreSelection: true
+                )
+            } else if !result.didHandle {
+                self.dismissTransientOverflowIfNeeded(
+                    in: tabBarController,
+                    allowingDefaultMoreSelection: false
+                )
             }
             return result.shouldCallDefault
         }
@@ -599,6 +608,24 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return (false, true)
         }
         return presentMoreMenu(request: request, in: tabBarController) ? (true, false) : (true, true)
+    }
+
+    private func dismissTransientOverflowIfNeeded(
+        in tabBarController: UITabBarController,
+        allowingDefaultMoreSelection: Bool
+    ) {
+        if allowingDefaultMoreSelection {
+            guard tabBarController.tabBarMenuIsPresentingTransientOverflowContent else {
+                return
+            }
+            _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
+            return
+        }
+
+        guard tabBarController.tabBarMenuHasViewControllerTransientOverflowContent else {
+            return
+        }
+        _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
     }
 
     // MARK: - Long press

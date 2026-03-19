@@ -103,8 +103,7 @@ extension UITabBarController {
         guard let state = uiTabOverflowPresentationState else {
             return
         }
-        guard tab !== state.sourceTab,
-              tab !== state.moreTabElement else {
+        guard tab !== state.sourceTab else {
             return
         }
         scheduleUITabOverflowCleanupAfterSelection()
@@ -130,13 +129,10 @@ extension UITabBarController {
         if currentTransientViewController() != nil {
             didDismiss = setTransientViewControllerPrivately(nil, animated: false)
         }
-        if uiTabOverflowPresentationState != nil {
-            restoreUITabOverflowDisplayedViewControllersIfNeeded()
-            uiTabOverflowPresentationState = nil
-            didDismiss = true
-        }
+        let didCleanupUITabOverflow = cleanupUITabOverflowPresentationIfNeeded()
+        didDismiss = didDismiss || didCleanupUITabOverflow
 
-        if didDismiss {
+        if didDismiss && !didCleanupUITabOverflow {
             cleanupMoreNavigationControllerState()
         }
         return didDismiss
@@ -563,6 +559,17 @@ extension UITabBarController {
         uiTabOverflowPresentationState?.preservedMoreItem ?? currentMoreTabBarItem()
     }
 
+    @discardableResult
+    private func cleanupUITabOverflowPresentationIfNeeded() -> Bool {
+        guard uiTabOverflowPresentationState != nil else {
+            return false
+        }
+        restoreUITabOverflowDisplayedViewControllersIfNeeded()
+        uiTabOverflowPresentationState = nil
+        cleanupMoreNavigationControllerState()
+        return true
+    }
+
     private func restoreUITabOverflowDisplayedViewControllersIfNeeded() {
         guard let state = uiTabOverflowPresentationState else {
             return
@@ -595,11 +602,7 @@ extension UITabBarController {
 
     private func scheduleUITabOverflowCleanupAfterSelection() {
         let cleanup: @MainActor () -> Void = {
-            guard self.uiTabOverflowPresentationState != nil else {
-                return
-            }
-            self.uiTabOverflowPresentationState = nil
-            self.cleanupMoreNavigationControllerState()
+            _ = self.cleanupUITabOverflowPresentationIfNeeded()
         }
 
         if let coordinator = transitionCoordinator {
