@@ -32,7 +32,7 @@ package enum UITabBarControllerRuntimeMethodNames {
     }()
 
     package static let setTransientViewControllerAnimated: String = {
-        ["animated:", "Controller", "View", "Transient", "set"].runtimeMethodName
+        ["animated:", "Controller:", "View", "Transient", "set"].runtimeMethodName
     }()
 
     package static let transientViewController: String = {

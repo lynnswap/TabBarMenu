@@ -261,7 +261,8 @@ extension UITabBarController {
                 : displayedViewControllers(for: sourceTab) as NSArray,
             originalMoreDisplayedViewControllers: previousState?.originalMoreDisplayedViewControllers
                 ?? displayedViewControllers(for: moreTabElement) as NSArray,
-            preservedMoreItem: syncedMoreItem
+            preservedMoreItem: syncedMoreItem,
+            originalInteractivePopGestureStates: previousState?.originalInteractivePopGestureStates ?? []
         )
 
         let applyPreparedOverflowPresentation: @MainActor () -> Void = {
@@ -564,6 +565,7 @@ extension UITabBarController {
         guard uiTabOverflowPresentationState != nil else {
             return false
         }
+        restoreUITabOverflowInteractivePopGesturesIfNeeded()
         restoreUITabOverflowDisplayedViewControllersIfNeeded()
         uiTabOverflowPresentationState = nil
         cleanupMoreNavigationControllerState()
@@ -587,17 +589,11 @@ extension UITabBarController {
             + [state.targetViewController]
             + [currentSelectedViewControllerInTabBar()].compactMap { $0 }
 
-        var visited: Set<ObjectIdentifier> = []
-        for viewController in candidates {
-            let identifier = ObjectIdentifier(viewController)
-            guard visited.insert(identifier).inserted else {
-                continue
-            }
-            if let navigationController = viewController as? UINavigationController {
-                navigationController.interactivePopGestureRecognizer?.isEnabled = false
-            }
-            viewController.navigationController?.interactivePopGestureRecognizer?.isEnabled = false
-        }
+        state.originalInteractivePopGestureStates = tabBarMenuRecordDisabledInteractivePopGestures(
+            for: candidates,
+            excluding: moreNavigationController,
+            preserving: state.originalInteractivePopGestureStates
+        )
     }
 
     private func scheduleUITabOverflowCleanupAfterSelection() {
@@ -653,6 +649,14 @@ extension UITabBarController {
         setDisplayedViewControllers(originalViewControllers, for: tab)
     }
 
+    private func restoreUITabOverflowInteractivePopGesturesIfNeeded() {
+        guard let state = uiTabOverflowPresentationState else {
+            return
+        }
+        tabBarMenuRestoreInteractivePopGestures(from: state.originalInteractivePopGestureStates)
+        state.originalInteractivePopGestureStates = []
+    }
+
     private var uiTabOverflowPresentationState: UITabOverflowPresentationState? {
         get {
             unsafe ObjectiveCInterop.associatedObject(
@@ -696,6 +700,7 @@ private final class UITabOverflowPresentationState {
     let originalDisplayedViewControllers: NSArray
     let originalMoreDisplayedViewControllers: NSArray
     let preservedMoreItem: UITabBarItem
+    var originalInteractivePopGestureStates: [InteractivePopGestureState]
 
     init(
         sourceTab: UITab,
@@ -704,7 +709,8 @@ private final class UITabOverflowPresentationState {
         preparedDisplayedViewControllers: [UIViewController],
         originalDisplayedViewControllers: NSArray,
         originalMoreDisplayedViewControllers: NSArray,
-        preservedMoreItem: UITabBarItem
+        preservedMoreItem: UITabBarItem,
+        originalInteractivePopGestureStates: [InteractivePopGestureState] = []
     ) {
         self.sourceTab = sourceTab
         self.moreTabElement = moreTabElement
@@ -713,6 +719,57 @@ private final class UITabOverflowPresentationState {
         self.originalDisplayedViewControllers = originalDisplayedViewControllers
         self.originalMoreDisplayedViewControllers = originalMoreDisplayedViewControllers
         self.preservedMoreItem = preservedMoreItem
+        self.originalInteractivePopGestureStates = originalInteractivePopGestureStates
+    }
+}
+
+package struct InteractivePopGestureState {
+    let navigationController: UINavigationController
+    let wasEnabled: Bool
+
+    var identifier: ObjectIdentifier {
+        ObjectIdentifier(navigationController)
+    }
+}
+
+@MainActor
+package func tabBarMenuRecordDisabledInteractivePopGestures(
+    for candidates: [UIViewController],
+    excluding excludedNavigationController: UINavigationController?,
+    preserving existingStates: [InteractivePopGestureState] = []
+) -> [InteractivePopGestureState] {
+    var recordedNavigationControllers = existingStates
+    var visited = Set(recordedNavigationControllers.map(\.identifier))
+
+    for viewController in candidates {
+        let navigationControllers = [
+            viewController as? UINavigationController,
+            viewController.navigationController,
+        ].compactMap { $0 }
+
+        for navigationController in navigationControllers where navigationController !== excludedNavigationController {
+            let identifier = ObjectIdentifier(navigationController)
+            if visited.insert(identifier).inserted {
+                recordedNavigationControllers.append(
+                    InteractivePopGestureState(
+                        navigationController: navigationController,
+                        wasEnabled: navigationController.interactivePopGestureRecognizer?.isEnabled ?? false
+                    )
+                )
+            }
+            navigationController.interactivePopGestureRecognizer?.isEnabled = false
+        }
+    }
+
+    return recordedNavigationControllers
+}
+
+@MainActor
+package func tabBarMenuRestoreInteractivePopGestures(
+    from states: [InteractivePopGestureState]
+) {
+    for gestureState in states {
+        gestureState.navigationController.interactivePopGestureRecognizer?.isEnabled = gestureState.wasEnabled
     }
 }
 

@@ -305,6 +305,29 @@ private func makeContentViewController(
 }
 
 @MainActor
+private func makeNavigationContentViewController(
+    title: String,
+    itemTitle: String,
+    tag: Int = 0
+) -> UINavigationController {
+    let rootViewController = makeContentViewController(
+        title: "\(title) Root",
+        itemTitle: itemTitle,
+        tag: tag
+    )
+    let detailViewController = makeContentViewController(
+        title: title,
+        itemTitle: itemTitle,
+        tag: tag
+    )
+    let navigationController = UINavigationController(rootViewController: rootViewController)
+    navigationController.pushViewController(detailViewController, animated: false)
+    navigationController.tabBarItem = UITabBarItem(title: itemTitle, image: nil, tag: tag)
+    navigationController.title = title
+    return navigationController
+}
+
+@MainActor
 private func makeTabBarTestContext(tabCount: Int) -> TabBarTestContext {
     let tabs = makeTabs(count: tabCount)
     let controller = UITabBarController(tabs: tabs)
@@ -1154,6 +1177,14 @@ func selectionOverrideInstallsAvailableRuntimePath() async {
     #expect(context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind != .none)
 }
 
+@Test("transient overflow animated selector matches Objective-C signature")
+func transientOverflowAnimatedSelectorMatchesObjectiveCSignature() {
+    #expect(
+        UITabBarControllerRuntimeMethodNames.setTransientViewControllerAnimated
+            == "setTransientViewController:animated:"
+    )
+}
+
 @Test("selectTabContent resolves a visible UITab")
 @MainActor
 func selectTabContentResolvesVisibleTab() async {
@@ -1454,6 +1485,45 @@ func visibleTabSelectionDismissesTransientOverflowContent() async {
         #expect(displayedViewController(in: context.controller.moreNavigationController) !== overflowViewController)
         #expect(displayedViewControllers(in: overflowTab).map(ObjectIdentifier.init) == originalOverflowDisplayedIdentifiers)
         #expect(displayedViewControllers(in: moreTab).map(ObjectIdentifier.init) == originalMoreDisplayedIdentifiers)
+    }
+}
+
+@Test("UITab overflow cleanup restores app navigation pop gestures")
+@MainActor
+func uitabOverflowCleanupRestoresAppNavigationPopGestures() async {
+    let navigationController = makeNavigationContentViewController(
+        title: "Recorded Navigation",
+        itemTitle: "Recorded Navigation",
+        tag: 0
+    )
+    let detailViewController = navigationController.viewControllers.last
+    let initialInteractivePopEnabled = navigationController.interactivePopGestureRecognizer?.isEnabled
+
+    #expect(detailViewController != nil)
+    #expect(initialInteractivePopEnabled != nil)
+
+    if let detailViewController, let initialInteractivePopEnabled {
+        let firstPass = tabBarMenuRecordDisabledInteractivePopGestures(
+            for: [detailViewController],
+            excluding: nil
+        )
+
+        #expect(firstPass.count == 1)
+        #expect(firstPass.first?.wasEnabled == initialInteractivePopEnabled)
+        #expect(navigationController.interactivePopGestureRecognizer?.isEnabled == false)
+
+        let secondPass = tabBarMenuRecordDisabledInteractivePopGestures(
+            for: [detailViewController],
+            excluding: nil,
+            preserving: firstPass
+        )
+
+        #expect(secondPass.count == 1)
+        #expect(secondPass.first?.wasEnabled == initialInteractivePopEnabled)
+
+        tabBarMenuRestoreInteractivePopGestures(from: secondPass)
+
+        #expect(navigationController.interactivePopGestureRecognizer?.isEnabled == initialInteractivePopEnabled)
     }
 }
 
