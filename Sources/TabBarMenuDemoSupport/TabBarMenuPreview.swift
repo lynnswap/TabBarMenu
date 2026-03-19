@@ -252,20 +252,8 @@ private final class TabBarMenuPreviewUITabController: TabBarMenuPreviewBaseContr
         }
         let actions = tabs.map { tab in
             let title = tab.title.isEmpty ? "Untitled" : tab.title
-            return UIAction(title: title, image: tab.image) { [weak self, weak tab] _ in
-                guard let self, let tab, let tabBarController = tab.tabBarController else {
-                    return
-                }
-                if !tabBarController.moreNavigationController.navigationBar.isHidden {
-                    tabBarController.moreNavigationController.navigationBar.isHidden = true
-                }
-                // MARK: Workaround for iOS 18 More-tab selection
-                // `selectedTab` does not reliably switch overflow UITab content.
-                if #available(iOS 26.0, *) {
-                    tabBarController.selectedTab = tab
-                } else if let viewController = tab.resolvedMoreSelectionViewController {
-                    tabBarController.selectedViewController = viewController
-                }
+            return UIAction(title: title, image: tab.image) { _ in
+                _ = tabBarController.selectTabContent(tab)
             }
         }
         return UIMenu(children: actions)
@@ -306,18 +294,8 @@ private final class TabBarMenuPreviewViewControllerController: TabBarMenuPreview
         }
         let actions = viewControllers.map { viewController in
             let title = viewController.title ?? viewController.tabBarItem.title ?? "Untitled"
-            return UIAction(title: title, image: viewController.tabBarItem.image) { [weak viewController] _ in
-                guard let viewController, let tabBarController = viewController.tabBarController else {
-                    return
-                }
-                if !tabBarController.moreNavigationController.navigationBar.isHidden {
-                    tabBarController.moreNavigationController.navigationBar.isHidden = true
-                }
-                guard let viewControllers = tabBarController.viewControllers,
-                      let selectedIndex = viewControllers.firstIndex(where: { $0 === viewController }) else {
-                    return
-                }
-                tabBarController.selectedIndex = selectedIndex
+            return UIAction(title: title, image: viewController.tabBarItem.image) { _ in
+                _ = tabBarController.selectTabContent(viewController)
             }
         }
         return UIMenu(children: actions)

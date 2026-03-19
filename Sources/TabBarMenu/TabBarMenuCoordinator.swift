@@ -24,6 +24,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     private weak var tabBarController: UITabBarController?
+    private var tabBarControllerDelegateProxy: TabBarMenuTabBarControllerDelegateProxy?
     private var menuHostButton: UIButton?
     private var lastGestureSyncEntries: [GestureSyncEntry] = []
 
@@ -38,6 +39,8 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
                 tabBar.tabBarMenuLayoutHandler = nil
                 removeMenuGestures(from: tabBar)
                 uninstallSelectionHandler(from: previousController)
+                uninstallDelegateProxy(from: previousController)
+                _ = previousController.dismissTabBarMenuTransientOverflowIfNeeded()
             }
             lastGestureSyncEntries = []
             menuHostButton?.removeFromSuperview()
@@ -55,6 +58,8 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
         if let tabBarController {
             uninstallSelectionHandler(from: tabBarController)
+            uninstallDelegateProxy(from: tabBarController)
+            _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
         }
         lastGestureSyncEntries = []
         menuHostButton?.removeFromSuperview()
@@ -66,6 +71,8 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard let tabBarController else {
             return
         }
+        installDelegateProxy(on: tabBarController)
+        tabBarController.dismissInvalidTabBarMenuTransientOverflowIfNeeded()
         synchronizeMenuGestures(in: tabBarController)
     }
 
@@ -87,6 +94,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     // MARK: - Selection handling
 
     private func installRuntimeBridges(on tabBarController: UITabBarController) {
+        installDelegateProxy(on: tabBarController)
         let tabBar = tabBarController.tabBar
         tabBar.tabBarMenuLayoutHandler = { [weak self] tabBar in
             guard let self,
@@ -97,22 +105,54 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             self.refreshInteractions()
         }
         tabBar.tabBarMenuSelectionHandler = { [weak self, weak tabBarController] _, item in
-            guard let self, let tabBarController else { return true }
+            guard let tabBarController else { return true }
+            guard let self else {
+                if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
+                    _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
+                }
+                return true
+            }
             let requestCore = self.makeRequestCore()
             guard let request = self.moreMenuRequest(using: requestCore) else {
+                if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
+                    _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
+                }
                 return true
             }
             // Return false to cancel system selection when we presented a More menu.
-            return self.handleMoreSelection(item, in: tabBarController, request: request) == false
+            let didPresentMenu = self.handleMoreSelection(item, in: tabBarController, request: request)
+            if didPresentMenu {
+                return false
+            }
+            if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
+                _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
+            }
+            return true
         }
         tabBar.tabBarMenuControlSelectionHandler = { [weak self, weak tabBarController] tabBar, control in
-            guard let self, let tabBarController else { return true }
+            guard let tabBarController else { return true }
+            guard let self else {
+                tabBar.tabBarMenuControlSelectionDidHandle = false
+                if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
+                    _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
+                }
+                return true
+            }
             let requestCore = self.makeRequestCore()
             guard let request = self.moreMenuRequest(using: requestCore) else {
+                tabBar.tabBarMenuControlSelectionDidHandle = false
+                if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
+                    _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
+                }
                 return true
             }
             let result = self.handleMoreSelection(control: control, in: tabBarController, request: request)
             tabBar.tabBarMenuControlSelectionDidHandle = result.didHandle
+            if !result.didHandle && tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
+                _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
+            } else if result.didHandle && result.shouldCallDefault && tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
+                _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
+            }
             return result.shouldCallDefault
         }
     }
@@ -120,6 +160,34 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private func uninstallSelectionHandler(from tabBarController: UITabBarController) {
         tabBarController.tabBar.tabBarMenuSelectionHandler = nil
         tabBarController.tabBar.tabBarMenuControlSelectionHandler = nil
+    }
+
+    private func installDelegateProxy(on tabBarController: UITabBarController) {
+        let proxy = tabBarControllerDelegateProxy ?? TabBarMenuTabBarControllerDelegateProxy()
+        proxy.tabBarController = tabBarController
+
+        if tabBarController.delegate !== proxy {
+            proxy.originalDelegate = tabBarController.delegate as? (NSObject & UITabBarControllerDelegate)
+            tabBarController.delegate = proxy
+        }
+
+        tabBarControllerDelegateProxy = proxy
+    }
+
+    private func uninstallDelegateProxy(from tabBarController: UITabBarController) {
+        guard let proxy = tabBarControllerDelegateProxy else {
+            return
+        }
+
+        if tabBarController.delegate === proxy {
+            tabBarController.delegate = proxy.originalDelegate
+        }
+
+        proxy.tabBarController = nil
+        proxy.originalDelegate = nil
+        if self.tabBarController !== tabBarController {
+            tabBarControllerDelegateProxy = nil
+        }
     }
 
     // MARK: - Gestures
@@ -574,7 +642,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     // MARK: - Private API helpers
 
     private func tabBarItemView(_ item: UITabBarItem) -> UIView? {
-        if let view = performSelector("view", on: item) as? UIView {
+        if let view = performSelector(UITabBarItemRuntimeMethodNames.view, on: item) as? UIView {
             return view
         }
         return nil

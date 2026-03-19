@@ -33,6 +33,65 @@ private final class MoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
 }
 
 @MainActor
+private final class MoreTabSelectionDelegate: NSObject, TabBarMenuDelegate {
+    private(set) var requestedTabs: [[UITab]] = []
+    private var selectionHandlers: [String: @MainActor () -> Void] = [:]
+
+    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+        requestedTabs.append(tabs)
+        selectionHandlers = [:]
+        let actions = tabs.map { tab in
+            let title = tab.title
+            selectionHandlers[title] = { [weak tabBarController] in
+                guard let tabBarController else {
+                    return
+                }
+                _ = tabBarController.selectTabContent(tab)
+            }
+            return UIAction(title: title, image: tab.image) { _ in
+                self.selectionHandlers[title]?()
+            }
+        }
+        return UIMenu(children: actions)
+    }
+
+    func performSelection(titled title: String) {
+        selectionHandlers[title]?()
+    }
+}
+
+@MainActor
+private final class MoreViewControllerSelectionDelegate: NSObject, TabBarMenuDelegate {
+    private(set) var requestedViewControllers: [[UIViewController]] = []
+    private var selectionHandlers: [String: @MainActor () -> Void] = [:]
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        menuForMoreTabWith viewControllers: [UIViewController]
+    ) -> UIMenu? {
+        requestedViewControllers.append(viewControllers)
+        selectionHandlers = [:]
+        let actions = viewControllers.map { viewController in
+            let title = viewController.title ?? viewController.tabBarItem.title ?? "Untitled"
+            selectionHandlers[title] = { [weak tabBarController] in
+                guard let tabBarController else {
+                    return
+                }
+                _ = tabBarController.selectTabContent(viewController)
+            }
+            return UIAction(title: title, image: viewController.tabBarItem.image) { _ in
+                self.selectionHandlers[title]?()
+            }
+        }
+        return UIMenu(children: actions)
+    }
+
+    func performSelection(titled title: String) {
+        selectionHandlers[title]?()
+    }
+}
+
+@MainActor
 private final class DualMoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
     private(set) var requestedTabsCount = 0
     private(set) var requestedViewControllersCount = 0
@@ -101,7 +160,7 @@ private final class ViewControllerMenuDelegate: NSObject, TabBarMenuDelegate {
 @MainActor
 private final class NoViewTabBarItem: UITabBarItem {
     override func responds(to aSelector: Selector!) -> Bool {
-        if let selector = aSelector, selector == NSSelectorFromString("view") {
+        if let selector = aSelector, selector == UITabBarItemRuntimeMethods.view {
             return false
         }
         return super.responds(to: aSelector)
@@ -133,6 +192,13 @@ private struct TabBarTestContext {
     let controller: UITabBarController
     let host: WindowHost
     let tabs: [UITab]
+}
+
+@MainActor
+private struct ViewControllerTabBarTestContext {
+    let controller: UITabBarController
+    let host: WindowHost
+    let viewControllers: [UIViewController]
 }
 
 @MainActor
@@ -174,7 +240,12 @@ private func makeTabs(count: Int) -> [UITab] {
             title: "Tab \(index)",
             image: nil,
             identifier: "tab.\(index)",
-            viewControllerProvider: { _ in UIViewController() }
+            viewControllerProvider: { _ in
+                makeContentViewController(
+                    title: "Tab \(index)",
+                    itemTitle: "Tab \(index)"
+                )
+            }
         )
     }
 }
@@ -189,21 +260,48 @@ private func makeTabBarItems(count: Int) -> [UITabBarItem] {
 @MainActor
 private func makeViewControllers(count: Int) -> [UIViewController] {
     (0..<count).map { index in
-        let controller = UIViewController()
-        controller.title = "View \(index)"
-        controller.tabBarItem = UITabBarItem(title: "Item \(index)", image: nil, tag: index)
-        return controller
+        makeContentViewController(
+            title: "View \(index)",
+            itemTitle: "Item \(index)",
+            tag: index
+        )
     }
 }
 
 @MainActor
 private func makeViewControllersWithNoViewItems(count: Int) -> [UIViewController] {
     (0..<count).map { index in
-        let controller = UIViewController()
-        controller.title = "View \(index)"
+        let controller = makeContentViewController(
+            title: "View \(index)",
+            itemTitle: "Item \(index)",
+            tag: index
+        )
         controller.tabBarItem = NoViewTabBarItem(title: "Item \(index)", image: nil, tag: index)
         return controller
     }
+}
+
+@MainActor
+private func makeContentViewController(
+    title: String,
+    itemTitle: String,
+    tag: Int = 0
+) -> UIViewController {
+    let controller = UIViewController()
+    controller.title = title
+    controller.view.backgroundColor = .systemBackground
+    controller.tabBarItem = UITabBarItem(title: itemTitle, image: nil, tag: tag)
+
+    let label = UILabel()
+    label.text = title
+    label.accessibilityIdentifier = "content-title-\(title)"
+    label.translatesAutoresizingMaskIntoConstraints = false
+    controller.view.addSubview(label)
+    NSLayoutConstraint.activate([
+        label.centerXAnchor.constraint(equalTo: controller.view.centerXAnchor),
+        label.centerYAnchor.constraint(equalTo: controller.view.centerYAnchor),
+    ])
+    return controller
 }
 
 @MainActor
@@ -212,6 +310,19 @@ private func makeTabBarTestContext(tabCount: Int) -> TabBarTestContext {
     let controller = UITabBarController(tabs: tabs)
     let host = WindowHost(rootViewController: controller)
     return TabBarTestContext(controller: controller, host: host, tabs: tabs)
+}
+
+@MainActor
+private func makeViewControllerTabBarTestContext(viewControllerCount: Int) -> ViewControllerTabBarTestContext {
+    let viewControllers = makeViewControllers(count: viewControllerCount)
+    let controller = UITabBarController()
+    controller.setViewControllers(viewControllers, animated: false)
+    let host = WindowHost(rootViewController: controller)
+    return ViewControllerTabBarTestContext(
+        controller: controller,
+        host: host,
+        viewControllers: viewControllers
+    )
 }
 
 @Test("UITab resolves a More-selection view controller")
@@ -247,7 +358,7 @@ private func tabBarControls(in view: UIView) -> [UIControl] {
 }
 @MainActor
 private func tabBarItemView(_ item: UITabBarItem) -> UIView? {
-    ObjectiveCInterop.performObjectSelector("view", on: item) as? UIView
+    ObjectiveCInterop.performObjectSelector(UITabBarItemRuntimeMethodNames.view, on: item) as? UIView
 }
 @MainActor
 private func tabBarButtonViews(in tabBar: UITabBar) -> [UIView] {
@@ -363,12 +474,178 @@ private func firstVisibleTabControl(in tabBarController: UITabBarController) -> 
 }
 
 @MainActor
-private func invokePrivateSelector(
+private func invokeRuntimeMethodNamed(
     _ name: String,
     on object: NSObject,
     argument: AnyObject?
 ) {
     unsafe _ = object.perform(NSSelectorFromString(name), with: argument)
+}
+
+@MainActor
+private func displayedViewController(in navigationController: UINavigationController) -> UIViewController? {
+    ObjectiveCInterop.performObjectSelector(
+        UIMoreNavigationControllerRuntimeMethodNames.displayedViewController,
+        on: navigationController
+    ) as? UIViewController
+}
+
+@MainActor
+private func transientViewController(in tabBarController: UITabBarController) -> UIViewController? {
+    ObjectiveCInterop.performObjectSelector(
+        UITabBarControllerRuntimeMethodNames.transientViewController,
+        on: tabBarController
+    ) as? UIViewController
+}
+
+@MainActor
+private func selectedTabElement(in tabBarController: UITabBarController) -> UITab? {
+    ObjectiveCInterop.performObjectSelector(
+        UITabBarControllerRuntimeMethodNames.selectedTabElement,
+        on: tabBarController
+    ) as? UITab
+}
+
+@MainActor
+private func resolvedMoreTab(in tabBarController: UITabBarController) -> UITab? {
+    ObjectiveCInterop.performObjectSelector(
+        UIMoreNavigationControllerRuntimeMethodNames.resolvedTab,
+        on: tabBarController.moreNavigationController
+    ) as? UITab
+}
+
+@MainActor
+private func displayedViewControllers(in tab: UITab) -> [UIViewController] {
+    (ObjectiveCInterop.performObjectSelector(
+        UITabRuntimeMethodNames.displayedViewControllers,
+        on: tab
+    ) as? [UIViewController]) ?? []
+}
+
+@MainActor
+private func moreListController(in navigationController: UINavigationController) -> UIViewController? {
+    ObjectiveCInterop.performObjectSelector(
+        UIMoreNavigationControllerRuntimeMethodNames.moreListController,
+        on: navigationController
+    ) as? UIViewController
+}
+
+@MainActor
+private func setDisplayedViewController(
+    _ viewController: UIViewController?,
+    in navigationController: UINavigationController
+) {
+    _ = ObjectiveCInterop.performVoidSelector(
+        UIMoreNavigationControllerRuntimeMethodNames.setDisplayedViewController,
+        on: navigationController,
+        with: viewController
+    )
+}
+
+@MainActor
+private func selectedViewController(in tabBarController: UITabBarController) -> UIViewController? {
+    unsafe tabBarController.selectedViewController
+}
+
+@MainActor
+private func selectedViewControllerInTabBar(in tabBarController: UITabBarController) -> UIViewController? {
+    if let viewController = ObjectiveCInterop.performObjectSelector(
+        UITabBarControllerRuntimeMethodNames.selectedViewControllerInTabBar,
+        on: tabBarController
+    ) as? UIViewController {
+        return viewController
+    }
+    return selectedViewController(in: tabBarController)
+}
+
+@MainActor
+private func navigationStack(of navigationController: UINavigationController) -> [UIViewController] {
+    navigationController.viewControllers
+}
+
+@MainActor
+private func canPopFromNavigationController(_ navigationController: UINavigationController) -> Bool {
+    navigationController.viewControllers.count > 1
+}
+
+@MainActor
+private func selectedTabBarItem(in tabBarController: UITabBarController) -> UITabBarItem? {
+    tabBarController.tabBar.selectedItem
+}
+
+@MainActor
+private func title(of item: UITabBarItem?) -> String? {
+    item?.title
+}
+
+@MainActor
+private func labelTexts(in view: UIView) -> [String] {
+    var result: [String] = []
+    if let label = view as? UILabel, let text = label.text, !text.isEmpty {
+        result.append(text)
+    }
+    for subview in view.subviews {
+        result.append(contentsOf: labelTexts(in: subview))
+    }
+    return result
+}
+
+@MainActor
+private func tabBarButtonTitles(in tabBarController: UITabBarController) -> [String] {
+    tabBarOrderedControls(in: tabBarController.tabBar).compactMap { control in
+        labelTexts(in: control).last
+    }
+}
+
+@MainActor
+private func visibleContentTitles(in tabBarController: UITabBarController) -> [String] {
+    contentLabelTexts(in: tabBarController.view, excluding: tabBarController.tabBar)
+}
+
+@MainActor
+private func containsViewController(
+    _ rootViewController: UIViewController,
+    descendant targetViewController: UIViewController
+) -> Bool {
+    if rootViewController === targetViewController {
+        return true
+    }
+    if let navigationController = rootViewController as? UINavigationController {
+        return navigationController.viewControllers.contains { viewController in
+            containsViewController(viewController, descendant: targetViewController)
+        }
+    }
+    return rootViewController.children.contains { viewController in
+        containsViewController(viewController, descendant: targetViewController)
+    }
+}
+
+@MainActor
+private func contentLabelTexts(in view: UIView, excluding excludedRoot: UIView) -> [String] {
+    guard view !== excludedRoot else {
+        return []
+    }
+
+    var result: [String] = []
+    if let label = view as? UILabel,
+       let identifier = label.accessibilityIdentifier,
+       identifier.hasPrefix("content-title-"),
+       let text = label.text,
+       !text.isEmpty {
+        result.append(text)
+    }
+    for subview in view.subviews {
+        result.append(contentsOf: contentLabelTexts(in: subview, excluding: excludedRoot))
+    }
+    return result
+}
+
+@MainActor
+private func waitForSelectionPropagation() async {
+    await Task.yield()
+    try? await Task.sleep(for: .milliseconds(150))
+    await Task.yield()
+    try? await Task.sleep(for: .milliseconds(250))
 }
 
 @Test("layout handler runs when items are assigned and laid out")
@@ -838,6 +1115,357 @@ func selectionOverrideInstallsAvailableRuntimePath() async {
     #expect(context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind != .none)
 }
 
+@Test("selectTabContent resolves a visible UITab")
+@MainActor
+func selectTabContentResolvesVisibleTab() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let targetTab = context.tabs[2]
+    let targetViewController = targetTab.resolvedMoreSelectionViewController
+    #expect(targetViewController != nil)
+    let didSelect = context.controller.selectTabContent(targetTab)
+    await waitForSelectionPropagation()
+
+    #expect(didSelect == true)
+    if let targetViewController {
+        #expect(selectedViewControllerInTabBar(in: context.controller) === targetViewController)
+    }
+    if #available(iOS 26.0, *) {
+        #expect(context.controller.selectedTab === targetTab)
+    }
+}
+
+@Test("selectTabContent stores a delegate-driven overflow override for UITab")
+@MainActor
+func selectTabContentResolvesOverflowTab() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let targetTab = context.tabs[5]
+    let targetViewController = targetTab.resolvedMoreSelectionViewController
+    let preservedMoreItem = moreTabBarItem(in: context.controller)
+    #expect(targetViewController != nil)
+    #expect(preservedMoreItem != nil)
+
+    if let targetViewController {
+        let didSelect = context.controller.selectTabContent(targetTab)
+        await waitForSelectionPropagation()
+        let override = context.controller.tabBarMenuDisplayedViewControllersOverride(
+            for: targetTab,
+            proposedViewControllers: []
+        )
+
+        #expect(didSelect == true)
+        #expect(context.controller.tabBarMenuHasActiveUITabMoreSelection == true)
+        #expect(transientViewController(in: context.controller) == nil)
+        #expect(override?.count == 1)
+        #expect(override?.contains { containsViewController($0, descendant: targetViewController) } == true)
+        #expect(navigationStack(of: context.controller.moreNavigationController).count == 1)
+        #expect(navigationStack(of: context.controller.moreNavigationController).contains { containsViewController($0, descendant: targetViewController) })
+        #expect(canPopFromNavigationController(context.controller.moreNavigationController) == false)
+        #expect(displayedViewController(in: context.controller.moreNavigationController) !== targetViewController)
+        #expect(title(of: selectedTabBarItem(in: context.controller)) == title(of: preservedMoreItem))
+        #expect(tabBarButtonTitles(in: context.controller).last == title(of: preservedMoreItem))
+    }
+}
+
+@Test("selectTabContent resolves a visible view controller")
+@MainActor
+func selectTabContentResolvesVisibleViewController() async {
+    let context = makeViewControllerTabBarTestContext(viewControllerCount: 6)
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let targetViewController = context.viewControllers[2]
+    let didSelect = context.controller.selectTabContent(targetViewController)
+    await waitForSelectionPropagation()
+
+    #expect(didSelect == true)
+    #expect(selectedViewControllerInTabBar(in: context.controller) === targetViewController)
+}
+
+@Test("selectTabContent resolves an overflow view controller with transient presentation")
+@MainActor
+func selectTabContentResolvesOverflowViewController() async {
+    let context = makeViewControllerTabBarTestContext(viewControllerCount: 6)
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let targetViewController = context.viewControllers[5]
+    let preservedMoreItem = moreTabBarItem(in: context.controller)
+    setDisplayedViewController(targetViewController, in: context.controller.moreNavigationController)
+
+    let didSelect = context.controller.selectTabContent(targetViewController)
+    await waitForSelectionPropagation()
+
+    #expect(didSelect == true)
+    #expect(selectedViewController(in: context.controller) === targetViewController)
+    #expect(selectedViewControllerInTabBar(in: context.controller) === targetViewController)
+    #expect(transientViewController(in: context.controller) === targetViewController)
+    #expect(targetViewController.navigationController !== context.controller.moreNavigationController)
+    #expect(targetViewController.parent === context.controller)
+    #expect(navigationStack(of: context.controller.moreNavigationController).count == 1)
+    #expect(navigationStack(of: context.controller.moreNavigationController).first === moreListController(in: context.controller.moreNavigationController))
+    #expect(canPopFromNavigationController(context.controller.moreNavigationController) == false)
+    #expect(displayedViewController(in: context.controller.moreNavigationController) === context.controller.moreNavigationController)
+    #expect(title(of: selectedTabBarItem(in: context.controller)) == title(of: preservedMoreItem))
+    #expect(tabBarButtonTitles(in: context.controller).last == title(of: preservedMoreItem))
+}
+
+@Test("selectTabContent rejects detached targets")
+@MainActor
+func selectTabContentRejectsDetachedTargets() async {
+    let tabContext = makeTabBarTestContext(tabCount: 6)
+    tabContext.controller.view.setNeedsLayout()
+    tabContext.host.window.layoutIfNeeded()
+
+    let initialTabSelection = selectedViewControllerInTabBar(in: tabContext.controller)
+    let detachedTabDidSelect = tabContext.controller.selectTabContent(
+        UITab(title: "Detached", image: nil, identifier: "detached") { _ in UIViewController() }
+    )
+    await waitForSelectionPropagation()
+
+    #expect(detachedTabDidSelect == false)
+    #expect(selectedViewControllerInTabBar(in: tabContext.controller) === initialTabSelection)
+    #expect(transientViewController(in: tabContext.controller) == nil)
+
+    let firstViewControllerContext = makeViewControllerTabBarTestContext(viewControllerCount: 6)
+    let secondViewControllerContext = makeViewControllerTabBarTestContext(viewControllerCount: 6)
+    firstViewControllerContext.controller.view.setNeedsLayout()
+    firstViewControllerContext.host.window.layoutIfNeeded()
+
+    let initialViewControllerSelection = selectedViewControllerInTabBar(in: firstViewControllerContext.controller)
+    let detachedViewControllerDidSelect = firstViewControllerContext.controller.selectTabContent(
+        secondViewControllerContext.viewControllers[5]
+    )
+    await waitForSelectionPropagation()
+
+    #expect(detachedViewControllerDidSelect == false)
+    #expect(selectedViewControllerInTabBar(in: firstViewControllerContext.controller) === initialViewControllerSelection)
+    #expect(transientViewController(in: firstViewControllerContext.controller) == nil)
+}
+
+@Test("More menu action stores a delegate-driven overflow override for UITab")
+@MainActor
+func moreMenuActionKeepsMoreSelectedForOverflowTab() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabSelectionDelegate()
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let targetTab = context.tabs[5]
+    let targetViewController = targetTab.resolvedMoreSelectionViewController
+    let preservedMoreItem = moreTabBarItem(in: context.controller)
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+
+    #expect(targetViewController != nil)
+    #expect(preservedMoreItem != nil)
+    #expect(handler != nil)
+
+    if let targetViewController, let preservedMoreItem, let handler {
+        let shouldCallDefault = handler(context.controller.tabBar, preservedMoreItem)
+        #expect(shouldCallDefault == false)
+        delegate.performSelection(titled: targetTab.title)
+        await waitForSelectionPropagation()
+        let override = context.controller.tabBarMenuDisplayedViewControllersOverride(
+            for: targetTab,
+            proposedViewControllers: []
+        )
+
+        #expect(context.controller.tabBarMenuHasActiveUITabMoreSelection == true)
+        #expect(transientViewController(in: context.controller) == nil)
+        #expect(override?.count == 1)
+        #expect(override?.contains { containsViewController($0, descendant: targetViewController) } == true)
+        #expect(navigationStack(of: context.controller.moreNavigationController).count == 1)
+        #expect(navigationStack(of: context.controller.moreNavigationController).contains { containsViewController($0, descendant: targetViewController) })
+        #expect(canPopFromNavigationController(context.controller.moreNavigationController) == false)
+        #expect(displayedViewController(in: context.controller.moreNavigationController) !== targetViewController)
+        #expect(title(of: selectedTabBarItem(in: context.controller)) == title(of: preservedMoreItem))
+        #expect(tabBarButtonTitles(in: context.controller).last == title(of: preservedMoreItem))
+    }
+}
+
+@Test("More menu action presents an overflow view controller transiently")
+@MainActor
+func moreMenuActionKeepsMoreSelectedForOverflowViewController() async {
+    let context = makeViewControllerTabBarTestContext(viewControllerCount: 6)
+    let delegate = MoreViewControllerSelectionDelegate()
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let targetViewController = context.viewControllers[5]
+    let preservedMoreItem = moreTabBarItem(in: context.controller)
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+
+    #expect(preservedMoreItem != nil)
+    #expect(handler != nil)
+
+    if let preservedMoreItem, let handler {
+        let shouldCallDefault = handler(context.controller.tabBar, preservedMoreItem)
+        #expect(shouldCallDefault == false)
+        delegate.performSelection(titled: targetViewController.title ?? targetViewController.tabBarItem.title ?? "Untitled")
+        await waitForSelectionPropagation()
+
+        #expect(selectedViewController(in: context.controller) === targetViewController)
+        #expect(selectedViewControllerInTabBar(in: context.controller) === targetViewController)
+        #expect(transientViewController(in: context.controller) === targetViewController)
+        #expect(targetViewController.navigationController !== context.controller.moreNavigationController)
+        #expect(targetViewController.parent === context.controller)
+        #expect(navigationStack(of: context.controller.moreNavigationController).count == 1)
+        #expect(navigationStack(of: context.controller.moreNavigationController).first === moreListController(in: context.controller.moreNavigationController))
+        #expect(canPopFromNavigationController(context.controller.moreNavigationController) == false)
+        #expect(displayedViewController(in: context.controller.moreNavigationController) === context.controller.moreNavigationController)
+        #expect(title(of: selectedTabBarItem(in: context.controller)) == title(of: preservedMoreItem))
+        #expect(tabBarButtonTitles(in: context.controller).last == title(of: preservedMoreItem))
+    }
+}
+
+@Test("More menu request deduplicates overflow view controllers while transient content is active")
+@MainActor
+func moreMenuRequestDeduplicatesOverflowViewControllers() async {
+    let context = makeViewControllerTabBarTestContext(viewControllerCount: 6)
+    let delegate = MoreViewControllerSelectionDelegate()
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let preservedMoreItem = moreTabBarItem(in: context.controller)
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+
+    #expect(preservedMoreItem != nil)
+    #expect(handler != nil)
+
+    if let preservedMoreItem, let handler {
+        let firstShouldCallDefault = handler(context.controller.tabBar, preservedMoreItem)
+        #expect(firstShouldCallDefault == false)
+        #expect(delegate.requestedViewControllers.last?.map(ObjectIdentifier.init) == [
+            ObjectIdentifier(context.viewControllers[4]),
+            ObjectIdentifier(context.viewControllers[5]),
+        ])
+
+        let targetTitle = context.viewControllers[5].title ?? context.viewControllers[5].tabBarItem.title ?? "Untitled"
+        delegate.performSelection(titled: targetTitle)
+        await waitForSelectionPropagation()
+
+        let secondShouldCallDefault = handler(context.controller.tabBar, preservedMoreItem)
+        #expect(secondShouldCallDefault == false)
+
+        let latestOverflowItems = delegate.requestedViewControllers.last ?? []
+        #expect(latestOverflowItems.map(ObjectIdentifier.init) == [
+            ObjectIdentifier(context.viewControllers[4]),
+            ObjectIdentifier(context.viewControllers[5]),
+        ])
+    }
+}
+
+@Test("visible UITab selection dismisses transient overflow content")
+@MainActor
+func visibleTabSelectionDismissesTransientOverflowContent() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let overflowTab = context.tabs[5]
+    let overflowViewController = overflowTab.resolvedMoreSelectionViewController
+    let visibleTab = context.tabs[1]
+    let visibleViewController = visibleTab.resolvedMoreSelectionViewController
+
+    #expect(overflowViewController != nil)
+    #expect(visibleViewController != nil)
+
+    if let overflowViewController, let visibleViewController {
+        _ = context.controller.selectTabContent(overflowTab)
+        await waitForSelectionPropagation()
+        let overrideBeforeDismiss = context.controller.tabBarMenuDisplayedViewControllersOverride(
+            for: overflowTab,
+            proposedViewControllers: []
+        )
+
+        #expect(context.controller.tabBarMenuHasActiveUITabMoreSelection == true)
+        #expect(transientViewController(in: context.controller) == nil)
+        #expect(overrideBeforeDismiss?.contains { containsViewController($0, descendant: overflowViewController) } == true)
+
+        _ = context.controller.selectTabContent(visibleTab)
+        await waitForSelectionPropagation()
+
+        #expect(context.controller.tabBarMenuHasActiveUITabMoreSelection == false)
+        #expect(transientViewController(in: context.controller) == nil)
+        #expect(context.controller.tabBarMenuDisplayedViewControllersOverride(
+            for: overflowTab,
+            proposedViewControllers: []
+        ) == nil)
+        #expect(selectedViewControllerInTabBar(in: context.controller) === visibleViewController)
+        #expect(navigationStack(of: context.controller.moreNavigationController).count == 1)
+        #expect(navigationStack(of: context.controller.moreNavigationController).first === moreListController(in: context.controller.moreNavigationController))
+        #expect(displayedViewController(in: context.controller.moreNavigationController) !== overflowViewController)
+    }
+}
+
+@Test("visible UITab tap keeps overflow state alive until UIKit completes selection")
+@MainActor
+func visibleTabTapDefersOverflowCleanupUntilSelectionCompletes() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabSelectionDelegate()
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let overflowTab = context.tabs[5]
+    let moreItem = moreTabBarItem(in: context.controller)
+    let visibleItem = context.controller.tabBar.items?[1]
+    let handler = context.controller.tabBar.tabBarMenuSelectionHandler
+
+    #expect(moreItem != nil)
+    #expect(visibleItem != nil)
+    #expect(handler != nil)
+
+    if let moreItem, let visibleItem, let handler {
+        let shouldSuppressMoreDefault = handler(context.controller.tabBar, moreItem)
+        #expect(shouldSuppressMoreDefault == false)
+        delegate.performSelection(titled: overflowTab.title)
+        await waitForSelectionPropagation()
+
+        #expect(context.controller.tabBarMenuHasActiveUITabMoreSelection == true)
+
+        let shouldCallDefaultForVisibleItem = handler(context.controller.tabBar, visibleItem)
+        #expect(shouldCallDefaultForVisibleItem == true)
+        #expect(context.controller.tabBarMenuHasActiveUITabMoreSelection == true)
+    }
+}
+
+@Test("visible view controller selection dismisses transient overflow content")
+@MainActor
+func visibleViewControllerSelectionDismissesTransientOverflowContent() async {
+    let context = makeViewControllerTabBarTestContext(viewControllerCount: 6)
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let overflowViewController = context.viewControllers[5]
+    let visibleViewController = context.viewControllers[1]
+
+    _ = context.controller.selectTabContent(overflowViewController)
+    await waitForSelectionPropagation()
+    #expect(transientViewController(in: context.controller) === overflowViewController)
+
+    _ = context.controller.selectTabContent(visibleViewController)
+    await waitForSelectionPropagation()
+
+    #expect(transientViewController(in: context.controller) == nil)
+    #expect(selectedViewControllerInTabBar(in: context.controller) === visibleViewController)
+    #expect(navigationStack(of: context.controller.moreNavigationController).count == 1)
+    #expect(navigationStack(of: context.controller.moreNavigationController).first === moreListController(in: context.controller.moreNavigationController))
+    #expect(displayedViewController(in: context.controller.moreNavigationController) === context.controller.moreNavigationController)
+}
+
 @Test("dual runtime hooks do not duplicate More delegate requests")
 @MainActor
 func dualRuntimeHooksDoNotDuplicateMoreDelegateRequests() async {
@@ -857,7 +1485,7 @@ func dualRuntimeHooksDoNotDuplicateMoreDelegateRequests() async {
     let moreControl = moreTabBarControl(in: context.controller)
     #expect(moreControl != nil)
     if let moreControl {
-        invokePrivateSelector("_buttonUp:", on: context.controller.tabBar, argument: moreControl)
+        invokeRuntimeMethodNamed(UITabBarRuntimeMethodNames.buttonUp, on: context.controller.tabBar, argument: moreControl)
     }
 
     #expect(delegate.requestedTabsCount == 1)

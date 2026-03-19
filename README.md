@@ -81,8 +81,12 @@ func tabBarController(
     _ tabBarController: UITabBarController,
     menuForMoreTabWith tabs: [UITab]
 ) -> UIMenu? {
-    let titles = tabs.map(\.title).joined(separator: ", ")
-    return UIMenu(title: "More: \(titles)", children: [])
+    let actions = tabs.map { tab in
+        UIAction(title: tab.title, image: tab.image) { _ in
+            tabBarController.selectTabContent(tab)
+        }
+    }
+    return UIMenu(title: "More", children: actions)
 }
 ```
 

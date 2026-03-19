@@ -90,7 +90,7 @@ struct TabBarMenuTabRequestContext: TabBarMenuRequestContext {
     let core: TabBarMenuRequestCore
 
     func items(in tabBarController: UITabBarController) -> [UITab] {
-        tabBarController.tabs
+        identityUniqued(tabBarController.tabs)
     }
 }
 
@@ -99,7 +99,25 @@ struct TabBarMenuViewControllerRequestContext: TabBarMenuRequestContext {
     let core: TabBarMenuRequestCore
 
     func items(in tabBarController: UITabBarController) -> [UIViewController] {
-        tabBarController.viewControllers ?? []
+        identityUniqued(tabBarController.viewControllers ?? [])
+    }
+
+    func moreMenuItems(in tabBarController: UITabBarController) -> [UIViewController] {
+        if let moreViewControllers = ObjectiveCInterop.performObjectSelector(
+            UIMoreNavigationControllerRuntimeMethodNames.moreViewControllers,
+            on: tabBarController.moreNavigationController
+        ) as? [UIViewController], !moreViewControllers.isEmpty {
+            return identityUniqued(moreViewControllers)
+        }
+        return core.moreItems(from: items(in: tabBarController))
+    }
+}
+
+@MainActor
+private func identityUniqued<Object: AnyObject>(_ objects: [Object]) -> [Object] {
+    var seen: Set<ObjectIdentifier> = []
+    return objects.filter { object in
+        seen.insert(ObjectIdentifier(object)).inserted
     }
 }
 
@@ -135,7 +153,7 @@ enum MoreMenuRequest {
             }
             return delegate.tabBarController?(tabBarController, menuForMoreTabWith: items)
         case .viewControllers(let context):
-            let items = context.moreItems(in: tabBarController)
+            let items = context.moreMenuItems(in: tabBarController)
             guard !items.isEmpty else {
                 return nil
             }
