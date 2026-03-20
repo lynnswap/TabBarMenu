@@ -2,7 +2,10 @@
 
 ## Test Commands
 - Run test commands from the `TabBarMenu` repository root.
-- Primary test command:
+- Primary local test commands (run both):
+  - `xcodebuild test -scheme TabBarMenu-Package -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1`
+  - `xcodebuild test -scheme TabBarMenu-Package -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.5' -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1`
+- If you want a latest-runtime fallback command:
   - `xcodebuild test -scheme TabBarMenu-Package -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1`
 - If the simulator name does not match your local environment:
   - `xcrun simctl list devices available`
