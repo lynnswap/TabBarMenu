@@ -108,6 +108,26 @@ package enum UIMoreNavigationControllerRuntimeMethodNames {
     }()
 }
 
+package enum UIMoreListControllerRuntimeMethodNames {
+    package static let table: String = {
+        ["table"].runtimeMethodName
+    }()
+
+    package static let didSelectRowAtIndexPath: String = {
+        ["didSelectRowAtIndexPath:", "tableView:"].runtimeMethodName
+    }()
+}
+
+package enum UIViewControllerRuntimeMethodNames {
+    package static let tab: String = {
+        ["tab"].runtimeMethodName
+    }()
+
+    package static let resolvedTab: String = {
+        ["Tab", "resolved", "_"].runtimeMethodName
+    }()
+}
+
 package enum UITabBarControllerDelegateRuntimeMethodNames {
     package static let displayedViewControllersForTab: String = {
         ["proposedViewControllers:", "Tab:", "For", "Controllers", "View", "displayed", "Controller:", "Bar", "tab"].runtimeMethodName

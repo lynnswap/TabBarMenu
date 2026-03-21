@@ -524,6 +524,31 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return indexedViews.first { $0.0 == moreTabIndex }?.1
     }
 
+    private func resolvedMoreControl(
+        in tabBarController: UITabBarController,
+        moreTabIndex: Int
+    ) -> UIControl? {
+        let fallbackControls = tabBarFallbackControls(in: tabBarController.tabBar)
+        guard !fallbackControls.isEmpty else {
+            return nil
+        }
+
+        let isRTL = tabBarController.tabBar.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        let sortedControls = fallbackControls.sorted { left, right in
+            let leftFrame = left.convert(left.bounds, to: tabBarController.tabBar)
+            let rightFrame = right.convert(right.bounds, to: tabBarController.tabBar)
+            if isRTL {
+                return leftFrame.minX > rightFrame.minX
+            }
+            return leftFrame.minX < rightFrame.minX
+        }
+
+        guard sortedControls.indices.contains(moreTabIndex) else {
+            return nil
+        }
+        return sortedControls[moreTabIndex]
+    }
+
     private func moreMenuRequest(using requestCore: TabBarMenuRequestCore) -> MoreMenuRequest? {
         MoreMenuRequest.make(delegate: delegate, core: requestCore)
     }
@@ -602,9 +627,24 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         request: MoreMenuRequest? = nil
     ) -> (didHandle: Bool, shouldCallDefault: Bool) {
         guard let request = request ?? moreMenuRequest(using: makeRequestCore()),
-              let moreTabIndex = request.moreTabStartIndex(in: tabBarController),
-              let resolvedIndex = resolvedTabIndex(for: control, in: tabBarController),
-              resolvedIndex == moreTabIndex else {
+              let moreTabIndex = request.moreTabStartIndex(in: tabBarController) else {
+            return (false, true)
+        }
+
+        let matchesMoreControl: Bool = {
+            if let resolvedIndex = resolvedTabIndex(for: control, in: tabBarController),
+               resolvedIndex == moreTabIndex {
+                return true
+            }
+            guard let moreControl = resolvedMoreControl(
+                in: tabBarController,
+                moreTabIndex: moreTabIndex
+            ) else {
+                return false
+            }
+            return moreControl === control
+        }()
+        guard matchesMoreControl else {
             return (false, true)
         }
         return presentMoreMenu(request: request, in: tabBarController) ? (true, false) : (true, true)

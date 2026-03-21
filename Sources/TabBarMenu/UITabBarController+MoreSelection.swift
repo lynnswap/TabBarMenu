@@ -4,7 +4,7 @@ import ObjectiveC
 @MainActor
 public extension UITabBarController {
     /// Selects the content represented by a tab.
-    /// - Note: Overflow `UITab` items are presented through the tab controller's private displayed-view path and keep the More item visually selected.
+    /// - Note: Overflow `UITab` items use the private displayed-view path on iOS 26+ and fall back to selecting the More navigation stack directly on iOS 18 to keep selection reliable.
     /// - Parameter tab: The `UITab` whose content should become active.
     /// - Returns: `true` when the tab belongs to this controller and selection was requested.
     @discardableResult
@@ -68,6 +68,13 @@ public extension UITabBarController {
 
 @MainActor
 extension UITabBarController {
+    nonisolated private var usesUITabDisplayedViewControllersOverflowPath: Bool {
+        if #available(iOS 26.0, *) {
+            return true
+        }
+        return false
+    }
+
     var tabBarMenuIsPresentingTransientOverflowContent: Bool {
         currentTransientViewController() != nil || uiTabOverflowPresentationState != nil
     }
@@ -77,7 +84,10 @@ extension UITabBarController {
     }
 
     nonisolated var tabBarMenuHasActiveUITabMoreSelection: Bool {
-        unsafe objc_getAssociatedObject(
+        guard usesUITabDisplayedViewControllersOverflowPath else {
+            return false
+        }
+        return unsafe objc_getAssociatedObject(
             self,
             &MoreSelectionAssociatedKeys.uiTabOverflowPresentationState
         ) != nil
@@ -87,6 +97,9 @@ extension UITabBarController {
         for tab: UITab,
         proposedViewControllers: [UIViewController]
     ) -> [UIViewController]? {
+        guard usesUITabDisplayedViewControllersOverflowPath else {
+            return nil
+        }
         guard let state = uiTabOverflowPresentationState,
               tab === state.moreTabElement || tab === state.sourceTab else {
             return nil
@@ -293,6 +306,42 @@ extension UITabBarController {
             self.isReplacingUITabOverflowSelection = false
         }
 
+        if !usesUITabDisplayedViewControllersOverflowPath {
+            let shouldFinishReplacement = isReplacingActiveUITabOverflow
+            if shouldFinishReplacement {
+                isReplacingUITabOverflowSelection = true
+            }
+            let didSelectLegacyOverflow: Bool
+            if shouldFinishReplacement {
+                didSelectLegacyOverflow = replaceLegacyUITabOverflowContent(
+                    targetViewController: viewController,
+                    preparedViewController: preparedViewController,
+                    syncedMoreItem: syncedMoreItem
+                )
+            } else {
+                didSelectLegacyOverflow = selectLegacyUITabOverflowViaMoreList(
+                    targetViewController: viewController,
+                    sourceTab: sourceTab,
+                    syncedMoreItem: syncedMoreItem
+                )
+            }
+            if !didSelectLegacyOverflow {
+                self.uiTabOverflowPresentationState = nil
+                finishLegacyMoreNavigationControllerSelection()
+                if shouldFinishReplacement {
+                    finishOverflowReplacement()
+                }
+                return false
+            }
+            scheduleLegacyMoreNavigationControllerSelectionCompletion {
+                self.finishLegacyMoreNavigationControllerSelection()
+                if shouldFinishReplacement {
+                    finishOverflowReplacement()
+                }
+            }
+            return true
+        }
+
         if isReplacingActiveUITabOverflow {
             isReplacingUITabOverflowSelection = true
             applyPreparedOverflowPresentation()
@@ -340,6 +389,239 @@ extension UITabBarController {
             applyPreparedOverflowPresentation()
         }
         return true
+    }
+
+    private func selectLegacyUITabOverflowContainer(with preservedMoreItem: UITabBarItem) -> Bool {
+        let targetViewController = moreNavigationController
+
+        let didForceSelection = ObjectiveCInterop.performVoidSelector(
+            UITabBarControllerRuntimeMethodNames.setSelectedViewControllerAndNotify,
+            on: self,
+            with: targetViewController
+        )
+        if !didForceSelection || currentSelectedViewControllerInTabBar() !== targetViewController {
+            unsafe selectedViewController = targetViewController
+        }
+        if unsafe selectedViewController !== targetViewController {
+            _ = ObjectiveCInterop.performVoidSelector(
+                UITabBarControllerRuntimeMethodNames.setSelectedViewController,
+                on: self,
+                with: targetViewController
+            )
+        }
+
+        restoreMoreTabSelectionIfNeeded(with: preservedMoreItem)
+        return currentSelectedViewControllerInTabBar() === targetViewController
+    }
+
+    private func selectLegacyUITabOverflowViaMoreList(
+        targetViewController: UIViewController,
+        sourceTab: UITab,
+        syncedMoreItem: UITabBarItem
+    ) -> Bool {
+        let shouldHideVisibleMoreContent = currentSelectedViewControllerInTabBar() === moreNavigationController
+        if shouldHideVisibleMoreContent {
+            prepareLegacyMoreNavigationControllerForSelection()
+        }
+
+        cleanupMoreNavigationControllerState(preservingViewAlpha: shouldHideVisibleMoreContent)
+
+        guard let moreListController = moreListControllerObject(),
+              let tableView = moreListTableView(in: moreListController),
+              let rowIndex = legacyMoreListRowIndex(
+                for: targetViewController,
+                sourceTab: sourceTab
+              ) else {
+            return false
+        }
+
+        if !shouldHideVisibleMoreContent {
+            prepareLegacyMoreNavigationControllerForSelection()
+        }
+        guard selectLegacyUITabOverflowContainer(with: syncedMoreItem) else {
+            return false
+        }
+
+        let indexPath = IndexPath(row: rowIndex, section: 0)
+        UIView.performWithoutAnimation {
+            tableView.selectRow(at: indexPath, animated: false, scrollPosition: .none)
+            _ = ObjectiveCInterop.performVoidSelector(
+                UIMoreListControllerRuntimeMethodNames.didSelectRowAtIndexPath,
+                on: moreListController,
+                with: tableView,
+                with: indexPath as NSIndexPath
+            )
+            moreNavigationController.view.layoutIfNeeded()
+        }
+
+        if let state = uiTabOverflowPresentationState {
+            disableInteractivePopForUITabOverflow(using: state)
+        }
+        restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
+
+        let topViewController = moreNavigationController.topViewController
+        return topViewController === targetViewController
+            || topViewController.map { containsLegacyMoreTarget($0, descendant: targetViewController) } == true
+    }
+
+    private func replaceLegacyUITabOverflowContent(
+        targetViewController: UIViewController,
+        preparedViewController: UIViewController,
+        syncedMoreItem: UITabBarItem
+    ) -> Bool {
+        let currentTopViewController = moreNavigationController.topViewController
+        if currentTopViewController === preparedViewController
+            || currentTopViewController === targetViewController
+            || currentTopViewController.map({ containsLegacyMoreTarget($0, descendant: targetViewController) }) == true {
+            if let state = uiTabOverflowPresentationState {
+                disableInteractivePopForUITabOverflow(using: state)
+            }
+            restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
+            return true
+        }
+
+        prepareLegacyMoreNavigationControllerForSelection()
+        cleanupMoreNavigationControllerState(
+            preservingViewAlpha: true
+        )
+        guard let moreListController = moreListControllerObject() as? UIViewController else {
+            return false
+        }
+        guard selectLegacyUITabOverflowContainer(with: syncedMoreItem) else {
+            return false
+        }
+
+        moreNavigationController.setViewControllers([moreListController], animated: false)
+        if moreNavigationController.topViewController !== preparedViewController {
+            moreNavigationController.pushViewController(preparedViewController, animated: false)
+        }
+        _ = ObjectiveCInterop.performVoidSelector(
+            UIMoreNavigationControllerRuntimeMethodNames.setDisplayedViewController,
+            on: moreNavigationController,
+            with: preparedViewController
+        )
+        moreNavigationController.view.layoutIfNeeded()
+
+        if let state = uiTabOverflowPresentationState {
+            disableInteractivePopForUITabOverflow(using: state)
+        }
+        restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
+
+        let topViewController = moreNavigationController.topViewController
+        return topViewController === preparedViewController
+            || topViewController === targetViewController
+            || topViewController.map { containsLegacyMoreTarget($0, descendant: targetViewController) } == true
+    }
+
+    private func moreListControllerObject() -> NSObject? {
+        ObjectiveCInterop.performObjectSelector(
+            UIMoreNavigationControllerRuntimeMethodNames.moreListController,
+            on: moreNavigationController
+        ) as? NSObject
+    }
+
+    private func moreListTableView(in controller: NSObject) -> UITableView? {
+        ObjectiveCInterop.performObjectSelector(
+            UIMoreListControllerRuntimeMethodNames.table,
+            on: controller
+        ) as? UITableView
+    }
+
+    private func legacyMoreListRowIndex(
+        for targetViewController: UIViewController,
+        sourceTab: UITab
+    ) -> Int? {
+        guard let moreViewControllers = ObjectiveCInterop.performObjectSelector(
+            UIMoreNavigationControllerRuntimeMethodNames.moreViewControllers,
+            on: moreNavigationController
+        ) as? [UIViewController] else {
+            return nil
+        }
+
+        if let directIndex = moreViewControllers.firstIndex(where: { $0 === targetViewController }) {
+            return directIndex
+        }
+
+        if let tabIndex = moreViewControllers.firstIndex(where: {
+            (ObjectiveCInterop.performObjectSelector(
+                UIViewControllerRuntimeMethodNames.tab,
+                on: $0
+            ) as? UITab) === sourceTab
+        }) {
+            return tabIndex
+        }
+
+        if let resolvedTabIndex = moreViewControllers.firstIndex(where: {
+            let resolvedTab = ObjectiveCInterop.performObjectSelector(
+                UIViewControllerRuntimeMethodNames.resolvedTab,
+                on: $0
+            )
+            return (resolvedTab as? UITab) === sourceTab || resolvedTab === sourceTab
+        }) {
+            return resolvedTabIndex
+        }
+
+        return nil
+    }
+
+    private func containsLegacyMoreTarget(
+        _ rootViewController: UIViewController,
+        descendant targetViewController: UIViewController
+    ) -> Bool {
+        if rootViewController === targetViewController {
+            return true
+        }
+        if let navigationController = rootViewController as? UINavigationController {
+            return navigationController.viewControllers.contains {
+                containsLegacyMoreTarget($0, descendant: targetViewController)
+            }
+        }
+        return rootViewController.children.contains {
+            containsLegacyMoreTarget($0, descendant: targetViewController)
+        }
+    }
+
+    private func prepareLegacyMoreNavigationControllerForSelection() {
+        moreNavigationController.loadViewIfNeeded()
+        moreNavigationController.view.alpha = 0
+    }
+
+    private func finishLegacyMoreNavigationControllerSelection() {
+        moreNavigationController.view.alpha = 1
+    }
+
+    private func scheduleLegacyMoreNavigationControllerSelectionCompletion(
+        _ completion: @escaping @MainActor () -> Void
+    ) {
+        func schedule(using coordinator: UIViewControllerTransitionCoordinator) -> Bool {
+            coordinator.animate(alongsideTransition: nil) { _ in
+                MainActor.assumeIsolated {
+                    completion()
+                }
+            }
+        }
+
+        func attemptRestore(remainingDeferrals: Int) {
+            if let coordinator = moreNavigationController.transitionCoordinator,
+               schedule(using: coordinator) {
+                return
+            }
+            if let coordinator = moreNavigationController.topViewController?.transitionCoordinator,
+               schedule(using: coordinator) {
+                return
+            }
+            if remainingDeferrals > 0 {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        attemptRestore(remainingDeferrals: remainingDeferrals - 1)
+                    }
+                }
+                return
+            }
+            completion()
+        }
+
+        attemptRestore(remainingDeferrals: 2)
     }
 
     private func performWithoutSelectionSideEffects(_ block: @escaping @MainActor () -> Void) {
@@ -503,9 +785,15 @@ extension UITabBarController {
         )
     }
 
-    private func cleanupMoreNavigationControllerState(restoringMoreListController: Bool = true) {
+    private func cleanupMoreNavigationControllerState(
+        restoringMoreListController: Bool = true,
+        preservingViewAlpha: Bool = false
+    ) {
         let moreNavigationController = moreNavigationController
         let moreNavigationControllerObject = moreNavigationController as NSObject
+        if !preservingViewAlpha {
+            moreNavigationController.viewIfLoaded?.alpha = 1
+        }
         moreNavigationController.interactivePopGestureRecognizer?.isEnabled = true
         moreNavigationController.setNavigationBarHidden(false, animated: false)
 

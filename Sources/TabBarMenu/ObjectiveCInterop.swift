@@ -123,6 +123,32 @@ package enum ObjectiveCInterop {
     package static func performVoidSelector(
         _ name: String,
         on object: NSObject,
+        with firstArgument: AnyObject?,
+        with secondArgument: AnyObject?
+    ) -> Bool {
+        let selector = NSSelectorFromString(name)
+        guard object.responds(to: selector) else {
+            return false
+        }
+
+        typealias Function = @convention(c) (
+            AnyObject,
+            Selector,
+            AnyObject?,
+            AnyObject?
+        ) -> Void
+        let implementation = unsafe unsafeBitCast(
+            object.method(for: selector),
+            to: Function.self
+        )
+        implementation(object, selector, firstArgument, secondArgument)
+        return true
+    }
+
+    @safe
+    package static func performVoidSelector(
+        _ name: String,
+        on object: NSObject,
         object argument: AnyObject?,
         bool flag: Bool
     ) -> Bool {
