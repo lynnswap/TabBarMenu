@@ -6,15 +6,8 @@ public extension UITab {
             return viewController
         }
         return ObjectiveCInterop.performObjectSelector(
-            Self.tabBarMenuDisplayedViewControllerSelectorName,
+            UITabRuntimeMethodNames.displayedViewController,
             on: self
         ) as? UIViewController
     }
-}
-
-private extension UITab {
-    static let tabBarMenuDisplayedViewControllerSelectorName: String = {
-        let parts = ["Controller", "View", "displayed", "_"]
-        return parts.reversed().joined()
-    }()
 }

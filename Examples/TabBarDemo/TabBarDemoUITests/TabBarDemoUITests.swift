@@ -8,6 +8,10 @@ final class TabBarDemoUITests: XCTestCase {
         static let menuPress: TimeInterval = 0.8
     }
 
+    override class var runsForEachTargetApplicationUIConfiguration: Bool {
+        false
+    }
+
     override func setUpWithError() throws {
         try super.setUpWithError()
         continueAfterFailure = false
@@ -33,7 +37,7 @@ final class TabBarDemoUITests: XCTestCase {
         setSearchTabEnabled(true)
         XCTAssertTrue(waitForTabBarButtonCount(atLeast: initialButtonCount + 1, in: tabBar, timeout: Timing.ui))
 
-        addTabs(count: 2)
+        addTabs(count: 3)
 
         let buttons = tabBar.buttons
         XCTAssertGreaterThanOrEqual(buttons.count, 5)
@@ -42,31 +46,68 @@ final class TabBarDemoUITests: XCTestCase {
         XCTAssertTrue(moreButton.exists)
         moreButton.tap()
 
-        let tappedOverflowItem = waitForMenuItem(named: "Extra 2", timeout: Timing.short)
+        let tappedOverflowItem = waitForMoreMenuItem(named: "Extra 2", in: tabBar, timeout: Timing.short)
         XCTAssertTrue(tappedOverflowItem.exists)
         tappedOverflowItem.tap()
 
         XCTAssertTrue(tabBar.waitForExistence(timeout: Timing.ui))
         assertContentTitle("Extra 2")
-        let refreshedMoreButton = tabBar.buttons.element(boundBy: tabBar.buttons.count - 1)
+        assertVisibleTitleCount("Extra 2", expected: 1)
+        assertLastTabBarButtonTitle("More", in: tabBar)
+        performLeadingEdgeBackSwipe()
+        assertContentTitle("Extra 2")
+        assertVisibleTitleCount("Extra 2", expected: 1)
+        assertLastTabBarButtonTitle("More", in: tabBar)
+        let refreshedMoreButton = lastTabBarButton(in: tabBar)
         XCTAssertTrue(refreshedMoreButton.exists)
-        refreshedMoreButton.press(forDuration: Timing.menuPress)
+        refreshedMoreButton.tap()
 
-        let overflowItem = waitForMenuItem(named: "Extra 1", timeout: Timing.short)
+        let overflowItem = waitForMoreMenuItem(named: "Extra 3", in: tabBar, timeout: Timing.short)
         XCTAssertTrue(overflowItem.exists)
         overflowItem.tap()
 
         XCTAssertTrue(tabBar.waitForExistence(timeout: Timing.ui))
-        let visibleTab = tabBar.buttons["Profile"]
-        XCTAssertTrue(visibleTab.waitForExistence(timeout: Timing.ui))
-
-        visibleTab.press(forDuration: Timing.menuPress)
-        let deleteAction = waitForMenuItem(named: "Delete", timeout: Timing.short)
-        XCTAssertTrue(deleteAction.exists)
-        deleteAction.tap()
-
-        XCTAssertTrue(waitForElementToDisappear(visibleTab, timeout: Timing.ui))
+        assertContentTitle("Extra 3")
+        assertVisibleTitleCount("Extra 3", expected: 1)
+        assertLastTabBarButtonTitle("More", in: tabBar)
+        XCTAssertFalse(app.staticTexts["More"].exists)
     }
+
+    @MainActor
+    func testMoreFlowInViewControllerMode() {
+        launchApp()
+        ensureViewControllerMode()
+
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.waitForExistence(timeout: Timing.ui))
+
+        addTabs(count: 3)
+
+        let buttons = tabBar.buttons
+        XCTAssertGreaterThanOrEqual(buttons.count, 5)
+
+        let moreButton = buttons.element(boundBy: buttons.count - 1)
+        XCTAssertTrue(moreButton.exists)
+        moreButton.tap()
+
+        let overflowItem = waitForMoreMenuItem(named: "Extra 2", in: tabBar, timeout: Timing.short)
+        XCTAssertTrue(overflowItem.exists)
+        overflowItem.tap()
+
+        XCTAssertTrue(tabBar.waitForExistence(timeout: Timing.ui))
+        assertContentTitle("Extra 2")
+        assertVisibleTitleCount("Extra 2", expected: 1)
+        assertLastTabBarButtonTitle("More", in: tabBar)
+        performLeadingEdgeBackSwipe()
+        assertContentTitle("Extra 2")
+        assertVisibleTitleCount("Extra 2", expected: 1)
+        assertLastTabBarButtonTitle("More", in: tabBar)
+        let refreshedMoreButton = lastTabBarButton(in: tabBar)
+        XCTAssertTrue(refreshedMoreButton.exists)
+        refreshedMoreButton.tap()
+        XCTAssertTrue(waitForMoreMenuItem(named: "Extra 3", in: tabBar, timeout: Timing.short).exists)
+    }
+
     @MainActor
     private func launchApp() {
         app = XCUIApplication()
@@ -85,6 +126,18 @@ final class TabBarDemoUITests: XCTestCase {
             uiTabButton.tap()
         }
     }
+
+    @MainActor
+    private func ensureViewControllerMode() {
+        let segmentedControl = app.segmentedControls.firstMatch
+        XCTAssertTrue(segmentedControl.waitForExistence(timeout: Timing.ui))
+        let viewControllerButton = segmentedControl.buttons["VC"]
+        XCTAssertTrue(viewControllerButton.exists)
+        if !viewControllerButton.isSelected {
+            viewControllerButton.tap()
+        }
+    }
+
     @MainActor
     private func addTabs(count: Int) {
         let addButton = addTabButton()
@@ -101,6 +154,28 @@ final class TabBarDemoUITests: XCTestCase {
         }
         return app.buttons["Add"].firstMatch
     }
+
+    @MainActor
+    private func lastTabBarButton(in tabBar: XCUIElement) -> XCUIElement {
+        tabBar.buttons.element(boundBy: tabBar.buttons.count - 1)
+    }
+
+    @MainActor
+    private func assertLastTabBarButtonTitle(_ title: String, in tabBar: XCUIElement) {
+        let button = lastTabBarButton(in: tabBar)
+        XCTAssertTrue(button.waitForExistence(timeout: Timing.ui))
+        XCTAssertEqual(button.label, title)
+    }
+
+    @MainActor
+    private func performLeadingEdgeBackSwipe() {
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: Timing.ui))
+        let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+        let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: end)
+    }
+
     @MainActor
     private func isSwitchOn(_ element: XCUIElement) -> Bool {
         guard let value = element.value as? String else {
@@ -126,6 +201,13 @@ final class TabBarDemoUITests: XCTestCase {
     }
 
     @MainActor
+    private func assertVisibleTitleCount(_ title: String, expected: Int) {
+        let predicate = NSPredicate(format: "label == %@", title)
+        let query = app.staticTexts.matching(predicate)
+        XCTAssertEqual(query.count, expected)
+    }
+
+    @MainActor
     @discardableResult
     private func waitForElementToDisappear(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
         let predicate = NSPredicate(format: "exists == false")
@@ -148,6 +230,38 @@ final class TabBarDemoUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         return menuItem.exists ? menuItem : button
+    }
+
+    @MainActor
+    @discardableResult
+    private func waitForMoreMenuItem(
+        named title: String,
+        in tabBar: XCUIElement,
+        timeout: TimeInterval
+    ) -> XCUIElement {
+        let predicate = NSPredicate(format: "label == %@", title)
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if app.menuItems[title].exists {
+                return app.menuItems[title]
+            }
+
+            let buttonQuery = app.buttons.matching(predicate)
+            for index in 0..<buttonQuery.count {
+                let candidate = buttonQuery.element(boundBy: index)
+                guard candidate.exists else {
+                    continue
+                }
+                let frame = candidate.frame
+                if frame.isEmpty == false, frame.maxY < tabBar.frame.minY {
+                    return candidate
+                }
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        return waitForMenuItem(named: title, timeout: 0)
     }
 
     @MainActor
