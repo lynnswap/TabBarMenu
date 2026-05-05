@@ -101,6 +101,8 @@ updateMenuConfiguration { configuration in
 }
 ```
 
+`maxVisibleTabCount` is a fallback. When available, TabBarMenu uses UIKit’s runtime More-tab limit instead.
+
 ## Optional: menu anchor placement
 
 Implement `configureMenuPresentationFor…` to customize the anchor placement and menu host button.

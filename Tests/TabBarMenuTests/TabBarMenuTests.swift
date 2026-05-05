@@ -456,11 +456,9 @@ private func menuRecognizerMinXAndIndices(in tabBar: UITabBar) -> [(minX: CGFloa
 }
 @MainActor
 private func moreTabBarItem(in tabBarController: UITabBarController) -> UITabBarItem? {
-    let maxVisibleCount = tabBarController.menuConfiguration.maxVisibleTabCount
-    guard maxVisibleCount > 0 else {
+    guard let moreIndex = resolvedMoreTabIndex(in: tabBarController) else {
         return nil
     }
-    let moreIndex = maxVisibleCount - 1
     guard let items = tabBarController.tabBar.items, items.indices.contains(moreIndex) else {
         return nil
     }
@@ -479,16 +477,39 @@ private func tabBarOrderedControls(in tabBar: UITabBar) -> [UIControl] {
 
 @MainActor
 private func moreTabBarControl(in tabBarController: UITabBarController) -> UIControl? {
-    let maxVisibleCount = tabBarController.menuConfiguration.maxVisibleTabCount
-    guard maxVisibleCount > 0 else {
+    guard let moreIndex = resolvedMoreTabIndex(in: tabBarController) else {
         return nil
     }
     let controls = tabBarOrderedControls(in: tabBarController.tabBar)
-    let moreIndex = maxVisibleCount - 1
     guard controls.indices.contains(moreIndex) else {
         return nil
     }
     return controls[moreIndex]
+}
+
+@MainActor
+private func resolvedMoreTabIndex(in tabBarController: UITabBarController) -> Int? {
+    let totalCount = max(tabBarController.tabs.count, tabBarController.viewControllers?.count ?? 0)
+    return TabBarMenuRequestCore(configuration: tabBarController.menuConfiguration).moreTabStartIndex(
+        totalCount: totalCount,
+        in: tabBarController
+    )
+}
+
+@MainActor
+private func setMaximumNumberOfItems(_ count: UInt, in tabBarController: UITabBarController) -> Bool {
+    let selector = NSSelectorFromString("_setMaximumNumberOfItems:")
+    guard tabBarController.responds(to: selector) else {
+        return false
+    }
+
+    typealias Function = @convention(c) (AnyObject, Selector, UInt) -> Void
+    let implementation = unsafe unsafeBitCast(
+        tabBarController.method(for: selector),
+        to: Function.self
+    )
+    implementation(tabBarController, selector, count)
+    return true
 }
 
 @MainActor
@@ -1170,6 +1191,36 @@ func moreTabSelectionConfiguresMenuPresentationWithNil() async {
     if let configuredTab = delegate.configuredTabs.first {
         #expect(configuredTab == nil)
     }
+}
+
+@Test("More tab selection follows UIKit effective maximum item count")
+@MainActor
+func moreTabSelectionUsesUIKitEffectiveMaximumItemCount() async {
+    let tabs = makeTabs(count: 6)
+    let controller = UITabBarController()
+    #expect(setMaximumNumberOfItems(4, in: controller) == true)
+    controller.tabs = tabs
+    let host = WindowHost(rootViewController: controller)
+    let delegate = MoreTabSelectionDelegate()
+
+    controller.menuDelegate = delegate
+    controller.updateMenuConfiguration { configuration in
+        configuration.maxVisibleTabCount = 5
+    }
+    controller.view.setNeedsLayout()
+    host.window.layoutIfNeeded()
+
+    let handler = controller.tabBar.tabBarMenuSelectionHandler
+    let moreItem = moreTabBarItem(in: controller)
+    #expect(resolvedMoreTabIndex(in: controller) == 3)
+    #expect(handler != nil)
+    #expect(moreItem != nil)
+    if let handler, let moreItem {
+        let shouldCallDefault = handler(controller.tabBar, moreItem)
+        #expect(shouldCallDefault == false)
+    }
+
+    #expect(delegate.requestedTabs.last?.map(\.identifier) == ["tab.3", "tab.4", "tab.5"])
 }
 
 @Test("selection override installs an available runtime path")
