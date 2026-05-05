@@ -118,6 +118,32 @@ final class DualMoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
 }
 
 @MainActor
+final class DualItemMenuDelegate: NSObject, TabBarMenuDelegate {
+    private(set) var requestedTabIdentifiers: [String?] = []
+    private(set) var requestedViewControllerTitles: [String?] = []
+    private let tabMenu: UIMenu?
+    private let viewControllerMenu: UIMenu?
+
+    init(
+        tabMenu: UIMenu? = UIMenu(children: []),
+        viewControllerMenu: UIMenu? = UIMenu(children: [])
+    ) {
+        self.tabMenu = tabMenu
+        self.viewControllerMenu = viewControllerMenu
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
+        requestedTabIdentifiers.append(tab?.identifier)
+        return tabMenu
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
+        requestedViewControllerTitles.append(viewController?.title)
+        return viewControllerMenu
+    }
+}
+
+@MainActor
 final class MoreTabPresentationDelegate: NSObject, TabBarMenuDelegate {
     private(set) var configuredTabs: [UITab?] = []
     private let menu: UIMenu
@@ -154,6 +180,38 @@ final class ViewControllerMenuDelegate: NSObject, TabBarMenuDelegate {
     func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
         requestedTitles.append(viewController?.title)
         return menu
+    }
+}
+
+@MainActor
+final class RecordingTabBarControllerDelegate: NSObject, UITabBarControllerDelegate {
+    private(set) var selectedViewControllers: [UIViewController] = []
+    private(set) var selectedTabs: [UITab] = []
+    private(set) var previousTabs: [UITab?] = []
+    private(set) var displayedRequests: [(tab: UITab, proposedViewControllers: [UIViewController])] = []
+    var displayedViewControllersResult: [UIViewController]?
+
+    func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+        selectedViewControllers.append(viewController)
+    }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        didSelectTab tab: UITab,
+        previousTab: UITab?
+    ) {
+        selectedTabs.append(tab)
+        previousTabs.append(previousTab)
+    }
+
+    @objc(tabBarController:displayedViewControllersForTab:proposedViewControllers:)
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        displayedViewControllersFor tab: UITab,
+        proposedViewControllers: [UIViewController]
+    ) -> [UIViewController] {
+        displayedRequests.append((tab, proposedViewControllers))
+        return displayedViewControllersResult ?? proposedViewControllers
     }
 }
 
@@ -673,24 +731,6 @@ func drainMainQueue(iterations: Int = 4) async {
             }
         }
     }
-}
-
-@MainActor
-func eventually(
-    maxMainQueueDrains: Int = 6,
-    condition: @MainActor () -> Bool
-) async -> Bool {
-    if condition() {
-        return true
-    }
-
-    for _ in 0..<maxMainQueueDrains {
-        await drainMainQueue(iterations: 1)
-        if condition() {
-            return true
-        }
-    }
-    return false
 }
 
 @MainActor

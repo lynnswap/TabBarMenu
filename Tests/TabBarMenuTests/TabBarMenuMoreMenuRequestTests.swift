@@ -136,3 +136,83 @@ func moreTabSelectionUsesUIKitEffectiveMaximumItemCount() async {
 
     #expect(delegate.requestedTabs.last?.map(\.identifier) == ["tab.3", "tab.4", "tab.5"])
 }
+
+@Test("fallback More start index honors maxVisibleTabCount")
+@MainActor
+func fallbackMoreStartIndexHonorsMaxVisibleTabCount() {
+    let core = TabBarMenuRequestCore(configuration: TabBarMenuConfiguration(maxVisibleTabCount: 5))
+    let zeroCore = TabBarMenuRequestCore(configuration: TabBarMenuConfiguration(maxVisibleTabCount: 0))
+    let negativeCore = TabBarMenuRequestCore(configuration: TabBarMenuConfiguration(maxVisibleTabCount: -1))
+
+    #expect(core.moreTabStartIndex(totalCount: 5) == nil)
+    #expect(core.moreTabStartIndex(totalCount: 6) == 4)
+    #expect(zeroCore.moreTabStartIndex(totalCount: 6) == nil)
+    #expect(negativeCore.moreTabStartIndex(totalCount: 6) == nil)
+}
+
+@Test("fallback item and More slices exclude the More tab entry")
+@MainActor
+func fallbackItemAndMoreSlicesExcludeMoreTabEntry() {
+    let core = TabBarMenuRequestCore(configuration: TabBarMenuConfiguration(maxVisibleTabCount: 5))
+    let items = Array(0..<6)
+
+    #expect(core.itemForMenu(at: 3, in: items) == 3)
+    #expect(core.itemForMenu(at: 4, in: items) == nil)
+    #expect(core.itemForMenu(at: 6, in: items) == nil)
+    #expect(core.moreItems(from: items) == [4, 5])
+    #expect(core.moreItems(from: Array(0..<5)).isEmpty)
+}
+
+@Test("item menu request prefers UITab delegate method")
+@MainActor
+func itemMenuRequestPrefersUITabDelegateMethod() {
+    let controller = UITabBarController(tabs: makeTabs(count: 3))
+    let delegate = DualItemMenuDelegate()
+    let request = ItemMenuRequest.make(
+        delegate: delegate,
+        core: TabBarMenuRequestCore(configuration: controller.menuConfiguration)
+    )
+
+    let menu = request?.menu(forItemAt: 1, in: controller, delegate: delegate)
+
+    #expect(menu != nil)
+    #expect(delegate.requestedTabIdentifiers == ["tab.1"])
+    #expect(delegate.requestedViewControllerTitles.isEmpty)
+}
+
+@Test("item menu request falls back to view controller delegate method")
+@MainActor
+func itemMenuRequestFallsBackToViewControllerDelegateMethod() {
+    let controller = UITabBarController()
+    let viewControllers = makeViewControllers(count: 3)
+    controller.setViewControllers(viewControllers, animated: false)
+    let delegate = ViewControllerMenuDelegate()
+    let request = ItemMenuRequest.make(
+        delegate: delegate,
+        core: TabBarMenuRequestCore(configuration: controller.menuConfiguration)
+    )
+
+    let menu = request?.menu(forItemAt: 2, in: controller, delegate: delegate)
+
+    #expect(menu != nil)
+    #expect(delegate.requestedTitles == ["View 2"])
+}
+
+@Test("item menu request skips the More tab index")
+@MainActor
+func itemMenuRequestSkipsMoreTabIndex() {
+    let controller = UITabBarController(tabs: makeTabs(count: 6))
+    controller.updateMenuConfiguration { configuration in
+        configuration.maxVisibleTabCount = 5
+    }
+    let delegate = TestMenuDelegate()
+    let request = ItemMenuRequest.make(
+        delegate: delegate,
+        core: TabBarMenuRequestCore(configuration: controller.menuConfiguration)
+    )
+
+    let menu = request?.menu(forItemAt: 4, in: controller, delegate: delegate)
+
+    #expect(menu == nil)
+    #expect(delegate.requestedIdentifiers.isEmpty)
+}
