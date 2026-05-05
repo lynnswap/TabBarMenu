@@ -43,8 +43,16 @@ jobs:
           xcode_app="$(ruby <<'RUBY'
           xcode_major = ENV.fetch("XCODE_MAJOR")
           candidates = Dir["/Applications/Xcode_#{xcode_major}*.app"].select { |path| File.directory?(path) }
+
+          def pre_release_xcode_path?(path)
+            labels = [path, File.realpath(path)].map { |candidate| File.basename(candidate).downcase }
+            labels.any? do |label|
+              label.match?(/beta|release[ _-]?candidate|(?:^|[_. -])rc(?:$|[_. -])/)
+            end
+          end
+
           candidates = candidates.reject do |path|
-            path.downcase.include?("beta") || File.realpath(path).downcase.include?("beta")
+            pre_release_xcode_path?(path)
           end
 
           def version_components(path)
