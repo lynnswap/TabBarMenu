@@ -93,6 +93,24 @@ package enum ObjectiveCInterop {
     }
 
     @safe
+    package static func performUnsignedIntegerSelector(
+        _ name: String,
+        on object: NSObject
+    ) -> UInt? {
+        let selector = NSSelectorFromString(name)
+        guard object.responds(to: selector) else {
+            return nil
+        }
+
+        typealias Function = @convention(c) (AnyObject, Selector) -> UInt
+        let implementation = unsafe unsafeBitCast(
+            object.method(for: selector),
+            to: Function.self
+        )
+        return implementation(object, selector)
+    }
+
+    @safe
     package static func performVoidSelector(
         _ name: String,
         on object: NSObject

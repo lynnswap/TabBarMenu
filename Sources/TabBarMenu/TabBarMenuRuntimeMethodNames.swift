@@ -7,6 +7,14 @@ private extension [String] {
 }
 
 package enum UITabBarControllerRuntimeMethodNames {
+    package static let effectiveMaxItems: String = {
+        ["Items", "Max", "effective", "_"].runtimeMethodName
+    }()
+
+    package static let tabElements: String = {
+        ["Elements", "tab", "_"].runtimeMethodName
+    }()
+
     package static let setSelectedViewControllerAndNotify: String = {
         ["Notify:", "And", "Controller", "View", "Selected", "set", "_"].runtimeMethodName
     }()

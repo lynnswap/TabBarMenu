@@ -22,6 +22,27 @@ struct TabBarMenuRequestCore {
     }
 
     func moreTabStartIndex(totalCount: Int) -> Int? {
+        fallbackMoreTabStartIndex(totalCount: totalCount)
+    }
+
+    func moreTabStartIndex(totalCount: Int, in tabBarController: UITabBarController) -> Int? {
+        if let actualMoreTabIndex = tabBarController.actualMoreTabIndexInTabElements,
+           actualMoreTabIndex < totalCount {
+            return actualMoreTabIndex
+        }
+
+        if let effectiveMaxItems = tabBarController.effectiveMaxTabBarItemCount,
+           effectiveMaxItems > 0 {
+            guard totalCount > effectiveMaxItems else {
+                return nil
+            }
+            return effectiveMaxItems - 1
+        }
+
+        return fallbackMoreTabStartIndex(totalCount: totalCount)
+    }
+
+    private func fallbackMoreTabStartIndex(totalCount: Int) -> Int? {
         let maxVisibleCount = max(configuration.maxVisibleTabCount, 0)
         guard maxVisibleCount > 0, totalCount > maxVisibleCount else {
             return nil
@@ -31,6 +52,13 @@ struct TabBarMenuRequestCore {
 
     func isMoreTabIndex(_ index: Int, totalCount: Int) -> Bool {
         guard let startIndex = moreTabStartIndex(totalCount: totalCount) else {
+            return false
+        }
+        return index == startIndex
+    }
+
+    func isMoreTabIndex(_ index: Int, totalCount: Int, in tabBarController: UITabBarController) -> Bool {
+        guard let startIndex = moreTabStartIndex(totalCount: totalCount, in: tabBarController) else {
             return false
         }
         return index == startIndex
@@ -46,12 +74,67 @@ struct TabBarMenuRequestCore {
         return items[index]
     }
 
+    func itemForMenu<T>(at index: Int, in items: [T], tabBarController: UITabBarController) -> T? {
+        guard !items.isEmpty else {
+            return nil
+        }
+        guard items.indices.contains(index),
+              isMoreTabIndex(index, totalCount: items.count, in: tabBarController) == false else {
+            return nil
+        }
+        return items[index]
+    }
+
     func moreItems<T>(from items: [T]) -> [T] {
         guard let startIndex = moreTabStartIndex(totalCount: items.count),
               items.indices.contains(startIndex) else {
             return []
         }
         return Array(items[startIndex...])
+    }
+
+    func moreItems<T>(from items: [T], tabBarController: UITabBarController) -> [T] {
+        guard let startIndex = moreTabStartIndex(totalCount: items.count, in: tabBarController),
+              items.indices.contains(startIndex) else {
+            return []
+        }
+        return Array(items[startIndex...])
+    }
+}
+
+@MainActor
+private extension UITabBarController {
+    var effectiveMaxTabBarItemCount: Int? {
+        guard let value = ObjectiveCInterop.performUnsignedIntegerSelector(
+            UITabBarControllerRuntimeMethodNames.effectiveMaxItems,
+            on: self
+        ), value <= UInt(Int.max) else {
+            return nil
+        }
+        return Int(value)
+    }
+
+    var actualMoreTabIndexInTabElements: Int? {
+        guard let elements = ObjectiveCInterop.performObjectSelector(
+            UITabBarControllerRuntimeMethodNames.tabElements,
+            on: self
+        ) as? [NSObject] else {
+            return nil
+        }
+
+        guard let index = elements.firstIndex(where: { element in
+            ObjectiveCInterop.performBoolSelector(
+                UITabRuntimeMethodNames.isMoreTab,
+                on: element
+            ) ?? false
+        }) else {
+            return nil
+        }
+
+        guard tabBar.items?.indices.contains(index) == true else {
+            return nil
+        }
+        return index
     }
 }
 
@@ -69,11 +152,11 @@ extension TabBarMenuRequestContext {
     }
 
     func moreItems(in tabBarController: UITabBarController) -> [Item] {
-        core.moreItems(from: items(in: tabBarController))
+        core.moreItems(from: items(in: tabBarController), tabBarController: tabBarController)
     }
 
     func itemForMenu(at index: Int, in tabBarController: UITabBarController) -> Item? {
-        core.itemForMenu(at: index, in: items(in: tabBarController))
+        core.itemForMenu(at: index, in: items(in: tabBarController), tabBarController: tabBarController)
     }
 
     func matchesItem(_ item: UITabBarItem, in tabBarController: UITabBarController) -> Bool {
@@ -81,7 +164,7 @@ extension TabBarMenuRequestContext {
               let index = items.firstIndex(where: { $0 === item }) else {
             return false
         }
-        return core.isMoreTabIndex(index, totalCount: totalCount(in: tabBarController))
+        return core.isMoreTabIndex(index, totalCount: totalCount(in: tabBarController), in: tabBarController)
     }
 }
 
@@ -109,7 +192,7 @@ struct TabBarMenuViewControllerRequestContext: TabBarMenuRequestContext {
         ) as? [UIViewController], !moreViewControllers.isEmpty {
             return identityUniqued(moreViewControllers)
         }
-        return core.moreItems(from: items(in: tabBarController))
+        return core.moreItems(from: items(in: tabBarController), tabBarController: tabBarController)
     }
 }
 
@@ -138,9 +221,15 @@ enum MoreMenuRequest {
     func moreTabStartIndex(in tabBarController: UITabBarController) -> Int? {
         switch self {
         case .tabs(let context):
-            return context.core.moreTabStartIndex(totalCount: context.totalCount(in: tabBarController))
+            return context.core.moreTabStartIndex(
+                totalCount: context.totalCount(in: tabBarController),
+                in: tabBarController
+            )
         case .viewControllers(let context):
-            return context.core.moreTabStartIndex(totalCount: context.totalCount(in: tabBarController))
+            return context.core.moreTabStartIndex(
+                totalCount: context.totalCount(in: tabBarController),
+                in: tabBarController
+            )
         }
     }
 
@@ -173,9 +262,17 @@ enum MoreMenuRequest {
     func isMoreTabIndex(_ index: Int, in tabBarController: UITabBarController) -> Bool {
         switch self {
         case .tabs(let context):
-            return context.core.isMoreTabIndex(index, totalCount: context.totalCount(in: tabBarController))
+            return context.core.isMoreTabIndex(
+                index,
+                totalCount: context.totalCount(in: tabBarController),
+                in: tabBarController
+            )
         case .viewControllers(let context):
-            return context.core.isMoreTabIndex(index, totalCount: context.totalCount(in: tabBarController))
+            return context.core.isMoreTabIndex(
+                index,
+                totalCount: context.totalCount(in: tabBarController),
+                in: tabBarController
+            )
         }
     }
 

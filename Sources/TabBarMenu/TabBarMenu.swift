@@ -29,8 +29,8 @@ public enum TabBarMenuAnchorPlacement: Equatable {
 public struct TabBarMenuConfiguration: Equatable {
     /// The minimum press duration required to trigger the menu.
     public var minimumPressDuration: TimeInterval
-    /// The maximum number of visible tabs before the system shows the More tab. Defaults to 5.
-    /// When the total tab count exceeds this value, the trailing visible item is treated as the More tab.
+    /// Fallback maximum number of visible tabs before the system shows the More tab. Defaults to 5.
+    /// UIKit's runtime value is preferred when available; this value is used when the runtime value cannot be resolved.
     public var maxVisibleTabCount: Int
 
     public init(

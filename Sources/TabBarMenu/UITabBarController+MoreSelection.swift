@@ -744,7 +744,7 @@ extension UITabBarController {
 
     private func isOverflowItemIndex(_ index: Int, totalCount: Int) -> Bool {
         let requestCore = TabBarMenuRequestCore(configuration: menuConfiguration)
-        guard let startIndex = requestCore.moreTabStartIndex(totalCount: totalCount) else {
+        guard let startIndex = requestCore.moreTabStartIndex(totalCount: totalCount, in: self) else {
             return false
         }
         return index >= startIndex
@@ -837,7 +837,7 @@ extension UITabBarController {
         let totalCount = max(tabs.count, viewControllers?.count ?? 0)
         let requestCore = TabBarMenuRequestCore(configuration: menuConfiguration)
         guard let items = tabBar.items,
-              let moreIndex = requestCore.moreTabStartIndex(totalCount: totalCount),
+              let moreIndex = requestCore.moreTabStartIndex(totalCount: totalCount, in: self),
               items.indices.contains(moreIndex) else {
             return nil
         }
