@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-tests:
+    name: Package Tests (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS 18 latest
+            runner: macos-15
+            ios_major: '18'
+            device_name: iPhone 16
+          - name: iOS 26 latest
+            runner: macos-26
+            ios_major: '26'
+            device_name: iPhone 17
+    runs-on: ${{ matrix.runner }}
+    env:
+      DEVICE_NAME: ${{ matrix.device_name }}
+      IOS_MAJOR: ${{ matrix.ios_major }}
+      XCODE_MAJOR: '26'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve latest stable Xcode
+        run: |
+          xcode_app="$(ruby <<'RUBY'
+          xcode_major = ENV.fetch("XCODE_MAJOR")
+          candidates = Dir["/Applications/Xcode_#{xcode_major}*.app"].select { |path| File.directory?(path) }
+
+          def pre_release_xcode_path?(path)
+            labels = [path, File.realpath(path)].map { |candidate| File.basename(candidate).downcase }
+            labels.any? do |label|
+              label.match?(/beta|release[ _-]?candidate|(?:^|[_. -])rc(?:$|[_. -])/)
+            end
+          end
+
+          candidates = candidates.reject do |path|
+            pre_release_xcode_path?(path)
+          end
+
+          def version_components(path)
+            version = File.basename(path)[/Xcode_(\d+(?:\.\d+)*)/, 1]
+            version.to_s.split(".").map(&:to_i)
+          end
+
+          selected = candidates.max_by { |path| version_components(path) }
+          abort("No stable Xcode #{xcode_major} installation found") unless selected
+          puts selected
+          RUBY
+          )"
+          echo "DEVELOPER_DIR=${xcode_app}/Contents/Developer" >> "$GITHUB_ENV"
+          echo "Resolved Xcode: ${xcode_app}"
+
+      - name: Resolve latest iOS simulator
+        run: |
+          ruby <<'RUBY'
+          require "json"
+
+          ios_major = ENV.fetch("IOS_MAJOR")
+          device_name = ENV.fetch("DEVICE_NAME")
+          devices = JSON.parse(`xcrun simctl list devices available --json`).fetch("devices")
+          matches = []
+
+          devices.each do |runtime, runtime_devices|
+            next unless runtime =~ /SimRuntime\.iOS-(\d+(?:-\d+)*)$/
+
+            version = Regexp.last_match(1).tr("-", ".")
+            next unless version.split(".").first == ios_major
+
+            runtime_devices.each do |device|
+              next unless device["name"] == device_name
+              next unless device.fetch("isAvailable", true)
+
+              matches << [version.split(".").map(&:to_i), version, device.fetch("udid")]
+            end
+          end
+
+          if matches.empty?
+            warn "No available #{device_name} simulator found for iOS #{ios_major}.x"
+            system("xcrun simctl list devices available")
+            exit 1
+          end
+
+          _, version, udid = matches.max_by { |components, _, _| components }
+          File.open(ENV.fetch("GITHUB_ENV"), "a") do |env|
+            env.puts "DESTINATION=platform=iOS Simulator,id=#{udid}"
+            env.puts "RESOLVED_IOS_VERSION=#{version}"
+          end
+          puts "Resolved simulator: #{device_name} iOS #{version} (#{udid})"
+          RUBY
+
+      - name: Show Xcode and simulator environment
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          echo "Destination: ${DESTINATION}"
+          echo "Resolved iOS: ${RESOLVED_IOS_VERSION}"
+          xcodebuild -showdestinations -scheme TabBarMenu-Package
+
+      - name: Run package tests
+        run: |
+          xcodebuild test \
+            -scheme TabBarMenu-Package \
+            -destination "${DESTINATION}" \
+            -parallel-testing-enabled NO \
+            -maximum-concurrent-test-simulator-destinations 1
