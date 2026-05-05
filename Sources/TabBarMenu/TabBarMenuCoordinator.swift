@@ -1,5 +1,35 @@
 import UIKit
 
+func tabBarMenuAnchorFrame(
+    tabFrame: CGRect,
+    placement: TabBarMenuAnchorPlacement?,
+    defaultPlacement: TabBarMenuAnchorPlacement
+) -> CGRect? {
+    let anchorPoint: CGPoint?
+    switch placement ?? defaultPlacement {
+    case .inside:
+        anchorPoint = CGPoint(x: tabFrame.midX, y: (tabFrame.maxY + tabFrame.midY) * 0.5)
+    case .above(let offset):
+        anchorPoint = CGPoint(x: tabFrame.midX, y: tabFrame.minY - offset)
+    case .custom(let point):
+        anchorPoint = point
+    case .manual:
+        anchorPoint = nil
+    }
+
+    guard let anchorPoint else {
+        return nil
+    }
+
+    let anchorSize: CGFloat = 2
+    return CGRect(
+        x: anchorPoint.x - anchorSize / 2,
+        y: anchorPoint.y - anchorSize / 2,
+        width: anchorSize,
+        height: anchorSize
+    )
+}
+
 @MainActor
 final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private struct GestureSyncEntry: Equatable {
@@ -399,26 +429,12 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return .above()
         }()
 
-        let anchorPoint: CGPoint?
-        switch placement ?? defaultPlacement {
-        case .inside:
-            anchorPoint = CGPoint(x: tabFrame.midX, y: (tabFrame.maxY + tabFrame.midY) * 0.5)
-        case .above(let offset):
-            anchorPoint = CGPoint(x: tabFrame.midX, y: tabFrame.minY - offset)
-        case .custom(let point):
-            anchorPoint = point
-        case .manual:
-            anchorPoint = nil
-        }
-
-        if let anchorPoint {
-            let anchorSize: CGFloat = 2
-            hostButton.frame = CGRect(
-                x: anchorPoint.x - anchorSize / 2,
-                y: anchorPoint.y - anchorSize / 2,
-                width: anchorSize,
-                height: anchorSize
-            )
+        if let anchorFrame = tabBarMenuAnchorFrame(
+            tabFrame: tabFrame,
+            placement: placement,
+            defaultPlacement: defaultPlacement
+        ) {
+            hostButton.frame = anchorFrame
         }
 
         hostButton.menu = menu
