@@ -112,12 +112,12 @@ jobs:
           xcodebuild -showsdks
           echo "Destination: ${DESTINATION}"
           echo "Resolved iOS: ${RESOLVED_IOS_VERSION}"
-          xcodebuild -showdestinations -scheme TabBarMenu-Package
 
       - name: Run package tests
         run: |
           xcodebuild test \
             -scheme TabBarMenu-Package \
             -destination "${DESTINATION}" \
+            -enableCodeCoverage NO \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1
