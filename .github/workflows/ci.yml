@@ -1,8 +1,16 @@
 name: CI
 
 on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - README.md
+      - LICENSE
   pull_request:
-    types: [opened, synchronize, reopened]
+    paths-ignore:
+      - README.md
+      - LICENSE
   workflow_dispatch:
 
 permissions:
