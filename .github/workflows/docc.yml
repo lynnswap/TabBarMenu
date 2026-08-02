@@ -1,0 +1,109 @@
+name: DocC
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Generate DocC
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      XCODE_MAJOR: '26'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve latest stable Xcode
+        run: |
+          xcode_app="$(ruby <<'RUBY'
+          xcode_major = ENV.fetch("XCODE_MAJOR")
+          candidates = Dir["/Applications/Xcode_#{xcode_major}*.app"].select { |path| File.directory?(path) }
+
+          def pre_release_xcode_path?(path)
+            labels = [path, File.realpath(path)].map { |candidate| File.basename(candidate).downcase }
+            labels.any? do |label|
+              label.match?(/beta|release[ _-]?candidate|(?:^|[_. -])rc(?:$|[_. -])/)
+            end
+          end
+
+          candidates = candidates.reject do |path|
+            pre_release_xcode_path?(path)
+          end
+
+          def version_components(path)
+            version = File.basename(path)[/Xcode_(\d+(?:\.\d+)*)/, 1]
+            version.to_s.split(".").map(&:to_i)
+          end
+
+          selected = candidates.max_by { |path| version_components(path) }
+          abort("No stable Xcode #{xcode_major} installation found") unless selected
+          puts selected
+          RUBY
+          )"
+          echo "DEVELOPER_DIR=${xcode_app}/Contents/Developer" >> "$GITHUB_ENV"
+          echo "Resolved Xcode: ${xcode_app}"
+
+      - name: Show Xcode environment
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+
+      - name: Generate DocC documentation
+        run: |
+          sdk_path="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          swift package --scratch-path .build/docc-generation \
+            --sdk "$sdk_path" \
+            --triple arm64-apple-ios18.0-simulator \
+            --allow-writing-to-directory .build/docs \
+            generate-documentation \
+            --target TabBarMenu \
+            --disable-indexing \
+            --transform-for-static-hosting \
+            --hosting-base-path TabBarMenu \
+            --warnings-as-errors \
+            --output-path .build/docs
+          touch .build/docs/.nojekyll
+
+      - name: Archive Pages artifact
+        run: |
+          tar \
+            -C .build/docs \
+            -cf "$RUNNER_TEMP/artifact.tar" \
+            --exclude=.git \
+            --exclude=.github \
+            .
+
+      - name: Upload Pages artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
