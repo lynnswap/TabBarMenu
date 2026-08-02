@@ -146,6 +146,11 @@ tabBarController.updateTabBarMenu { currentMenu in
 }
 ```
 
+## Documentation
+
+The DocC workflow publishes the [TabBarMenu API documentation](https://lynnswap.github.io/TabBarMenu/documentation/tabbarmenu/)
+to GitHub Pages whenever a change is pushed to `main`.
+
 ## Demo app
 
 Open `Examples/TabBarDemo/TabBarDemo.xcodeproj` and run the `TabBarDemo` scheme on iOS 18+.
