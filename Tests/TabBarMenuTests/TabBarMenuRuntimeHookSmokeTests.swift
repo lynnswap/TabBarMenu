@@ -48,6 +48,72 @@ func dualRuntimeHooksDoNotDuplicateMoreDelegateRequests() async {
     #expect(delegate.requestedTabsCount == 1)
 }
 
+@Test("buttonUp runtime hook survives KVO subclassing")
+@MainActor
+func buttonUpRuntimeHookSurvivesKVOAddedSubclass() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: nil)
+    context.controller.tabBar.tabBarMenuPreferredSelectionOverrideKind = .buttonUp
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    #expect(context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind == .buttonUp)
+    let observation = context.controller.tabBar.observe(\.frame, options: [.new]) { _, _ in }
+    let moreControl = moreTabBarControl(in: context.controller)
+    #expect(moreControl != nil)
+
+    defer { observation.invalidate() }
+
+    if let moreControl {
+        invokeRuntimeMethodNamed(
+            UITabBarRuntimeMethodNames.buttonUp,
+            on: context.controller.tabBar,
+            argument: moreControl
+        )
+    }
+
+    #expect(delegate.requestedTabsCount == 1)
+}
+
+@Test("available didSelect runtime hook survives KVO subclassing")
+@MainActor
+func didSelectRuntimeHookSurvivesKVOAddedSubclass() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabMenuDelegate(menu: nil)
+    context.controller.tabBar.tabBarMenuPreferredSelectionOverrideKind = .didSelectButtonForItem
+
+    context.controller.menuDelegate = delegate
+    context.controller.view.setNeedsLayout()
+    context.host.window.layoutIfNeeded()
+
+    let installedKind = context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind
+    guard installedKind == .didSelectButtonForItem else {
+        #expect(installedKind == .none)
+        return
+    }
+
+    let observation = context.controller.tabBar.observe(\.frame, options: [.new]) { _, _ in }
+    let moreItem = moreTabBarItem(in: context.controller)
+    #expect(moreItem != nil)
+
+    defer { observation.invalidate() }
+
+    if let moreItem {
+        let methodName = ["Item:", "For", "Button", "Select", "did", "_"]
+            .reversed()
+            .joined()
+        invokeRuntimeMethodNamed(
+            methodName,
+            on: context.controller.tabBar,
+            argument: moreItem
+        )
+    }
+
+    #expect(delegate.requestedTabsCount == 1)
+}
+
 @Test("forced buttonUp fallback suppresses More default when menu is provided")
 @MainActor
 func forcedButtonUpFallbackSuppressesMoreDefaultWhenMenuIsProvided() async {

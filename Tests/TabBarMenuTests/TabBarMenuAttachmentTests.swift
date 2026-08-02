@@ -69,6 +69,45 @@ func layoutHandlerRunsForInPlaceItemMutations() {
     #expect(recorder.events.last == [100, 101, 1])
 }
 
+@Test("layout handler runs after KVO subclasses the tab bar")
+@MainActor
+func layoutHandlerRunsAfterKVOAddsRuntimeSubclass() {
+    let host = StandaloneTabBarHost()
+    let recorder = TabBarLayoutRecorder(tabBar: host.tabBar)
+    let observation = host.tabBar.observe(\.frame, options: [.new]) { _, _ in }
+    let updatedItems = makeTabBarItems(count: 3)
+    let baseCount = recorder.events.count
+
+    defer { observation.invalidate() }
+
+    host.tabBar.items = updatedItems
+    host.layoutIfNeeded()
+
+    #expect(recorder.events.count == baseCount + 1)
+    #expect(recorder.events.last == updatedItems.map(\.tag))
+}
+
+@Test("layout handler reattaches below an existing KVO subclass")
+@MainActor
+func layoutHandlerReattachesAfterKVOAddsRuntimeSubclass() {
+    let host = StandaloneTabBarHost()
+    host.tabBar.tabBarMenuLayoutHandler = { _ in }
+    let observation = host.tabBar.observe(\.frame, options: [.new]) { _, _ in }
+    let updatedItems = makeTabBarItems(count: 2)
+    var reattachedEvents: [[Int]] = []
+
+    defer { observation.invalidate() }
+
+    host.tabBar.tabBarMenuLayoutHandler = nil
+    host.tabBar.tabBarMenuLayoutHandler = { tabBar in
+        reattachedEvents.append(tabBar.items?.map(\.tag) ?? [])
+    }
+    host.tabBar.items = updatedItems
+    host.layoutIfNeeded()
+
+    #expect(reattachedEvents == [updatedItems.map(\.tag)])
+}
+
 @Test("menuDelegate attaches long-press gestures")
 @MainActor
 func menuDelegateAttachesLongPressGestures() async {

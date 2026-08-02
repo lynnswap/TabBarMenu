@@ -38,9 +38,27 @@ static SEL TBMButtonUpSelector(void)
     return selector;
 }
 
+static BOOL TBMClassHierarchyContainsClass(Class currentClass, Class targetClass)
+{
+    for (Class candidate = currentClass; candidate; candidate = class_getSuperclass(candidate)) {
+        if (candidate == targetClass) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+static Class TBMSuperclassForInstalledSubclass(UITabBar *tabBar)
+{
+    // Do not derive this from the current isa: KVO and other runtime layers may
+    // sit above the class that owns the TabBarMenu override.
+    Class subclass = objc_getAssociatedObject(tabBar, &kMenuSubclassKey);
+    return subclass ? class_getSuperclass(subclass) : Nil;
+}
+
 static void TBMCallSuperLayoutSubviews(id self, SEL _cmd)
 {
-    Class superClass = class_getSuperclass(object_getClass(self));
+    Class superClass = TBMSuperclassForInstalledSubclass((UITabBar *)self);
     if (!superClass) {
         return;
     }
@@ -53,7 +71,7 @@ static void TBMCallSuperLayoutSubviews(id self, SEL _cmd)
 
 static void TBMCallSuperDidSelectButtonForItem(id self, SEL _cmd, id item)
 {
-    Class superClass = class_getSuperclass(object_getClass(self));
+    Class superClass = TBMSuperclassForInstalledSubclass((UITabBar *)self);
     if (!superClass) {
         return;
     }
@@ -66,7 +84,7 @@ static void TBMCallSuperDidSelectButtonForItem(id self, SEL _cmd, id item)
 
 static void TBMCallSuperButtonUp(id self, SEL _cmd, id sender)
 {
-    Class superClass = class_getSuperclass(object_getClass(self));
+    Class superClass = TBMSuperclassForInstalledSubclass((UITabBar *)self);
     if (!superClass) {
         return;
     }
@@ -139,7 +157,7 @@ static Class TBMEnsureSubclass(UITabBar *tabBar)
     }
 
     Class subclass = objc_getAssociatedObject(tabBar, &kMenuSubclassKey);
-    if (subclass && currentClass == subclass) {
+    if (subclass && TBMClassHierarchyContainsClass(currentClass, subclass)) {
         return subclass;
     }
 
