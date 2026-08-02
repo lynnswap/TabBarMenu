@@ -2,36 +2,39 @@ import Testing
 import UIKit
 @testable import TabBarMenu
 
-@Test("anchor placement computes host button frames")
+@Test("explicit anchor placements compute host button frames")
 @MainActor
-func anchorPlacementComputesHostButtonFrames() {
+func explicitAnchorPlacementsComputeHostButtonFrames() {
     let tabFrame = CGRect(x: 10, y: 20, width: 80, height: 40)
 
     #expect(tabBarMenuAnchorFrame(
         tabFrame: tabFrame,
-        placement: .inside,
-        defaultPlacement: .above(offset: 0)
+        placement: .inside
     ) == CGRect(x: 49, y: 49, width: 2, height: 2))
     #expect(tabBarMenuAnchorFrame(
         tabFrame: tabFrame,
-        placement: .above(offset: 8),
-        defaultPlacement: .inside
+        placement: .above(offset: 8)
     ) == CGRect(x: 49, y: 11, width: 2, height: 2))
     #expect(tabBarMenuAnchorFrame(
         tabFrame: tabFrame,
-        placement: .custom(CGPoint(x: 7, y: 9)),
-        defaultPlacement: .inside
+        placement: .custom(CGPoint(x: 7, y: 9))
     ) == CGRect(x: 6, y: 8, width: 2, height: 2))
     #expect(tabBarMenuAnchorFrame(
         tabFrame: tabFrame,
-        placement: .manual,
-        defaultPlacement: .inside
+        placement: .manual
     ) == nil)
+}
+
+@Test("anchor placement defaults above the tab")
+@MainActor
+func anchorPlacementDefaultsAboveTheTab() {
+    let tabFrame = CGRect(x: 10, y: 20, width: 80, height: 40)
+    let expectedAnchorY = tabFrame.minY - TabBarMenuAnchorPlacement.defaultAboveOffset
+
     #expect(tabBarMenuAnchorFrame(
         tabFrame: tabFrame,
-        placement: nil,
-        defaultPlacement: .above(offset: -12)
-    ) == CGRect(x: 49, y: 31, width: 2, height: 2))
+        placement: nil
+    ) == CGRect(x: 49, y: expectedAnchorY - 1, width: 2, height: 2))
 }
 
 @Test("default above offset follows the runtime major version")

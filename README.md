@@ -106,6 +106,7 @@ updateMenuConfiguration { configuration in
 ## Optional: menu anchor placement
 
 Implement `configureMenuPresentationFor…` to customize the anchor placement and menu host button.
+When the method returns `nil`, or is not implemented, TabBarMenu places the menu above the tab using the default offset.
 
 ```swift
 func tabBarController(
