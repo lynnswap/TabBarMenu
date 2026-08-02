@@ -2,11 +2,10 @@ import UIKit
 
 func tabBarMenuAnchorFrame(
     tabFrame: CGRect,
-    placement: TabBarMenuAnchorPlacement?,
-    defaultPlacement: TabBarMenuAnchorPlacement
+    placement: TabBarMenuAnchorPlacement?
 ) -> CGRect? {
     let anchorPoint: CGPoint?
-    switch placement ?? defaultPlacement {
+    switch placement ?? .above() {
     case .inside:
         anchorPoint = CGPoint(x: tabFrame.midX, y: (tabFrame.maxY + tabFrame.midY) * 0.5)
     case .above(let offset):
@@ -422,17 +421,9 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         hostButton: UIButton,
         sourceView: UIView
     ) {
-        let defaultPlacement: TabBarMenuAnchorPlacement = {
-            if #available(iOS 26.0, *) {
-                return .inside
-            }
-            return .above()
-        }()
-
         if let anchorFrame = tabBarMenuAnchorFrame(
             tabFrame: tabFrame,
-            placement: placement,
-            defaultPlacement: defaultPlacement
+            placement: placement
         ) {
             hostButton.frame = anchorFrame
         }

@@ -100,7 +100,7 @@ public struct TabBarMenuConfiguration: Equatable {
     ///   - containerView: The view hosting the menu.
     ///   - menuHostButton: The internal button used to present the menu. Configure properties like
     ///     `preferredMenuElementOrder` here.
-    /// - Returns: The placement to use, or `nil` to use the default placement.
+    /// - Returns: The placement to use, or `nil` to place the menu above the tab using the default offset.
     func tabBarController(
         _ tabBarController: UITabBarController,
         configureMenuPresentationFor tab: UITab?,
@@ -116,7 +116,7 @@ public struct TabBarMenuConfiguration: Equatable {
     ///   - tabFrame: The tab bar item frame in `containerView` coordinates.
     ///   - containerView: The view hosting the menu.
     ///   - menuHostButton: The internal button used to present the menu.
-    /// - Returns: The placement to use, or `nil` to use the default placement.
+    /// - Returns: The placement to use, or `nil` to place the menu above the tab using the default offset.
     func tabBarController(
         _ tabBarController: UITabBarController,
         configureMenuPresentationFor viewController: UIViewController?,
