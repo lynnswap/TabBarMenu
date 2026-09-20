@@ -2,6 +2,69 @@ import Testing
 import UIKit
 @testable import TabBarMenu
 
+@Test("More navigation tabs restore their roots when switching content")
+@MainActor
+func moreNavigationTabsRestoreRootsWhenSwitchingContent() async throws {
+    let roots = (0..<6).map {
+        makeContentViewController(title: "Root \($0)", itemTitle: "Tab \($0)")
+    }
+    let navigationControllers = roots.map { UINavigationController(rootViewController: $0) }
+    let tabs = navigationControllers.enumerated().map { index, navigationController in
+        UITab(title: "Tab \(index)", image: nil, identifier: "tab.\(index)") { _ in navigationController }
+    }
+    let controller = UITabBarController(tabs: tabs)
+    let delegate = MoreTabSelectionDelegate()
+    controller.menuDelegate = delegate
+    let host = WindowHost(rootViewController: controller)
+    defer { withExtendedLifetime((host, delegate)) {} }
+    let preservedMoreItem = try #require(moreTabBarItem(in: controller))
+
+    for index in [5, 5, 4, 5, 0] {
+        UIView.performWithoutAnimation {
+            #expect(controller.selectTabContent(tabs[index]))
+        }
+        await drainMainQueue()
+        host.window.layoutIfNeeded()
+        #expect(visibleContentTitles(in: controller) == [try #require(roots[index].title)])
+        if index >= 4 {
+            #expect(title(of: selectedTabBarItem(in: controller)) == title(of: preservedMoreItem))
+        }
+        for previousIndex in [4, 5] where previousIndex != index {
+            #expect(navigationControllers[previousIndex].viewControllers.first === roots[previousIndex])
+        }
+    }
+}
+
+
+@Test("visible UITab selection after overflow displays its content", arguments: [0, 1])
+@MainActor
+func visibleTabSelectionAfterOverflowDisplaysContent(visibleIndex: Int) async throws {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabSelectionDelegate()
+    context.controller.menuDelegate = delegate
+    defer { withExtendedLifetime(delegate) {} }
+    let overflowTab = context.tabs[5]
+    let visibleTab = context.tabs[visibleIndex]
+    let overflowContent = try #require(overflowTab.resolvedMoreSelectionViewController)
+    let visibleContent = try #require(visibleTab.resolvedMoreSelectionViewController)
+
+    UIView.performWithoutAnimation {
+        #expect(context.controller.selectTabContent(overflowTab))
+    }
+    await drainMainQueue()
+    context.host.window.layoutIfNeeded()
+    #expect(visibleContentTitles(in: context.controller) == [try #require(overflowContent.title)])
+
+    UIView.performWithoutAnimation {
+        #expect(context.controller.selectTabContent(visibleTab))
+    }
+    await drainMainQueue()
+    context.host.window.layoutIfNeeded()
+
+    #expect(selectedViewControllerInTabBar(in: context.controller) === visibleContent)
+    #expect(visibleContentTitles(in: context.controller) == [try #require(visibleContent.title)])
+}
+
 @Test("selectTabContent resolves a visible UITab")
 @MainActor
 func selectTabContentResolvesVisibleTab() async {
