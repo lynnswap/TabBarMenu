@@ -252,9 +252,22 @@ extension UITabBarController {
             cleanupMoreNavigationControllerState()
         }
 
-        guard let moreTabElement = resolvedMoreTabElement(),
-              let preparedViewController = preparedMoreViewController(for: viewController) else {
+        guard let moreTabElement = resolvedMoreTabElement() else {
             return false
+        }
+        let preparedViewController: UIViewController
+        if let previousState, previousState.targetViewController === viewController,
+           let prepared = previousState.preparedDisplayedViewControllers.first {
+            preparedViewController = prepared
+        } else if usesUITabDisplayedViewControllersOverflowPath {
+            if previousState?.targetViewController is UINavigationController {
+                isReplacingUITabOverflowSelection = true
+                cleanupMoreNavigationControllerState()
+            }
+            preparedViewController = preparedMoreViewController(for: viewController)
+        } else {
+            preparedViewController = (viewController as? UINavigationController)?.viewControllers.first
+                ?? viewController
         }
 
         if let previousState, previousState.sourceTab !== sourceTab {
@@ -293,10 +306,11 @@ extension UITabBarController {
                 for: state.moreTabElement
             )
             self.moreNavigationController.setViewControllers(state.preparedDisplayedViewControllers, animated: false)
+            // The displayed controller is the original owner, not its borrowed root.
             _ = ObjectiveCInterop.performVoidSelector(
                 UIMoreNavigationControllerRuntimeMethodNames.setDisplayedViewController,
                 on: self.moreNavigationController,
-                with: state.preparedDisplayedViewControllers.last
+                with: state.targetViewController
             )
             self.disableInteractivePopForUITabOverflow(using: state)
             self.restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
@@ -443,9 +457,10 @@ extension UITabBarController {
         }
 
         let indexPath = IndexPath(row: rowIndex, section: 0)
+        var didRequestSelection = false
         UIView.performWithoutAnimation {
             tableView.selectRow(at: indexPath, animated: false, scrollPosition: .none)
-            _ = ObjectiveCInterop.performVoidSelector(
+            didRequestSelection = ObjectiveCInterop.performVoidSelector(
                 UIMoreListControllerRuntimeMethodNames.didSelectRowAtIndexPath,
                 on: moreListController,
                 with: tableView,
@@ -459,9 +474,7 @@ extension UITabBarController {
         }
         restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
 
-        let topViewController = moreNavigationController.topViewController
-        return topViewController === targetViewController
-            || topViewController.map { containsLegacyMoreTarget($0, descendant: targetViewController) } == true
+        return didRequestSelection
     }
 
     private func replaceLegacyUITabOverflowContent(
@@ -493,13 +506,9 @@ extension UITabBarController {
 
         moreNavigationController.setViewControllers([moreListController], animated: false)
         if moreNavigationController.topViewController !== preparedViewController {
-            moreNavigationController.pushViewController(preparedViewController, animated: false)
+            // More records the original navigation owner while borrowing its root.
+            moreNavigationController.pushViewController(targetViewController, animated: false)
         }
-        _ = ObjectiveCInterop.performVoidSelector(
-            UIMoreNavigationControllerRuntimeMethodNames.setDisplayedViewController,
-            on: moreNavigationController,
-            with: preparedViewController
-        )
         moreNavigationController.view.layoutIfNeeded()
 
         if let state = uiTabOverflowPresentationState {
@@ -918,7 +927,9 @@ extension UITabBarController {
         }
     }
 
-    private func preparedMoreViewController(for viewController: UIViewController) -> UIViewController? {
+    private func preparedMoreViewController(for viewController: UIViewController) -> UIViewController {
+        // UIKit can return nil after borrowing the navigation controller's root.
+        let navigationRoot = (viewController as? UINavigationController)?.viewControllers.first
         if let preparedViewController = ObjectiveCInterop.performObjectSelector(
             UIMoreNavigationControllerRuntimeMethodNames.preparedViewController,
             on: moreNavigationController,
@@ -926,7 +937,7 @@ extension UITabBarController {
         ) as? UIViewController {
             return preparedViewController
         }
-        return viewController
+        return navigationRoot ?? viewController
     }
 
     private func restoreDisplayedViewControllers(
