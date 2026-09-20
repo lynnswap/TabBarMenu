@@ -2,6 +2,35 @@ import Testing
 import UIKit
 @testable import TabBarMenu
 
+@Test("visible UITab selection after overflow displays its content", arguments: [0, 1])
+@MainActor
+func visibleTabSelectionAfterOverflowDisplaysContent(visibleIndex: Int) async throws {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabSelectionDelegate()
+    context.controller.menuDelegate = delegate
+    defer { withExtendedLifetime(delegate) {} }
+    let overflowTab = context.tabs[5]
+    let visibleTab = context.tabs[visibleIndex]
+    let overflowContent = try #require(overflowTab.resolvedMoreSelectionViewController)
+    let visibleContent = try #require(visibleTab.resolvedMoreSelectionViewController)
+
+    UIView.performWithoutAnimation {
+        #expect(context.controller.selectTabContent(overflowTab))
+    }
+    await drainMainQueue()
+    context.host.window.layoutIfNeeded()
+    #expect(visibleContentTitles(in: context.controller) == [try #require(overflowContent.title)])
+
+    UIView.performWithoutAnimation {
+        #expect(context.controller.selectTabContent(visibleTab))
+    }
+    await drainMainQueue()
+    context.host.window.layoutIfNeeded()
+
+    #expect(selectedViewControllerInTabBar(in: context.controller) === visibleContent)
+    #expect(visibleContentTitles(in: context.controller) == [try #require(visibleContent.title)])
+}
+
 @Test("selectTabContent resolves a visible UITab")
 @MainActor
 func selectTabContentResolvesVisibleTab() async {
