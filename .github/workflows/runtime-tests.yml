@@ -1,0 +1,85 @@
+name: Runtime Tests
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      xcode_major:
+        required: true
+        type: string
+      allow_prerelease:
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    name: Discover installed iOS runtimes
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.runtimes.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Resolve Xcode
+        env:
+          XCODE_MAJOR: ${{ inputs.xcode_major }}
+          XCODE_ALLOW_PRERELEASE: ${{ inputs.allow_prerelease }}
+        run: ruby .github/scripts/resolve-xcode.rb
+      - name: Discover installed supported runtimes
+        id: runtimes
+        run: python3 .github/scripts/ios-runtime-matrix.py discover
+
+  test:
+    name: iOS ${{ matrix.version }}
+    needs: discover
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Resolve Xcode
+        env:
+          XCODE_MAJOR: ${{ inputs.xcode_major }}
+          XCODE_ALLOW_PRERELEASE: ${{ inputs.allow_prerelease }}
+        run: ruby .github/scripts/resolve-xcode.rb
+      - name: Create a Simulator for the runtime
+        env:
+          RUNTIME_ID: ${{ matrix.runtime }}
+        run: python3 .github/scripts/ios-runtime-matrix.py resolve --runtime "$RUNTIME_ID"
+      - name: Boot the Simulator
+        run: xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+      - name: Run package tests
+        run: |
+          set -e -o pipefail
+          xcodebuild -version
+          echo "Testing iOS $RESOLVED_IOS_VERSION on $DESTINATION"
+          xcodebuild test \
+            -scheme TabBarMenu-Package \
+            -destination "$DESTINATION" \
+            -enableCodeCoverage NO \
+            -parallel-testing-enabled NO \
+            -maximum-concurrent-test-simulator-destinations 1 \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 30 \
+            -maximum-test-execution-time-allowance 60 \
+            -resultBundlePath "$RUNNER_TEMP/tests.xcresult" \
+            | tee "$RUNNER_TEMP/tests.log"
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tests-${{ inputs.runner }}-iOS-${{ matrix.version }}
+          path: |
+            ${{ runner.temp }}/tests.log
+            ${{ runner.temp }}/tests.xcresult
+          if-no-files-found: ignore
+      - name: Delete the test Simulator
+        if: always() && env.SIMULATOR_UDID != ''
+        run: xcrun simctl delete "$SIMULATOR_UDID"
