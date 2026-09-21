@@ -19,10 +19,6 @@ func explicitAnchorPlacementsComputeHostButtonFrames() {
         tabFrame: tabFrame,
         placement: .custom(CGPoint(x: 7, y: 9))
     ) == CGRect(x: 6, y: 8, width: 2, height: 2))
-    #expect(tabBarMenuAnchorFrame(
-        tabFrame: tabFrame,
-        placement: .manual
-    ) == nil)
 }
 
 @Test("anchor placement defaults above the tab")

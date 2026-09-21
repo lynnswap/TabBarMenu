@@ -475,77 +475,26 @@ func uitabOverflowCleanupRestoresAppNavigationPopGestures() async {
     }
 }
 
-@Test("More default control selection clears active UITab overflow state")
+@Test("A nil More preparation preserves active overflow content")
 @MainActor
-func moreDefaultControlSelectionClearsActiveUITabOverflowState() async {
+func nilMorePreparationPreservesOverflowContent() async throws {
     let context = makeTabBarTestContext(tabCount: 6)
-    let selectionDelegate = MoreTabSelectionDelegate()
+    let delegate = MoreTabMenuDelegate(menu: nil)
+    context.controller.menuDelegate = delegate
+    let tab = context.tabs[5]
+    #expect(context.controller.selectTabContent(tab))
+    await drainMainQueue()
+    let originalStack = navigationStack(of: context.controller.moreNavigationController)
+    let originalDisplayed = displayedViewControllers(in: tab)
+    let control = try #require(moreTabBarControl(in: context.controller))
+    let handler = try #require(context.controller.tabBar.tabBarMenuControlSelectionHandler)
 
-    context.controller.menuDelegate = selectionDelegate
-    context.controller.view.setNeedsLayout()
-    context.host.window.layoutIfNeeded()
-
-    let overflowTab = context.tabs[5]
-    let overflowViewController = overflowTab.resolvedMoreSelectionViewController
-    let moreTab = resolvedMoreTab(in: context.controller)
-    let moreControl = moreTabBarControl(in: context.controller)
-
-    #expect(overflowViewController != nil)
-    #expect(moreTab != nil)
-    #expect(moreControl != nil)
-
-    if let overflowViewController, let moreTab, let moreControl {
-        let originalOverflowDisplayedIdentifiers = displayedViewControllers(in: overflowTab).map(ObjectIdentifier.init)
-        let originalMoreDisplayedIdentifiers = displayedViewControllers(in: moreTab).map(ObjectIdentifier.init)
-
-        #expect(requestMoreMenu(in: context.controller, delegate: selectionDelegate) != nil)
-        selectionDelegate.performSelection(titled: overflowTab.title)
-        await drainMainQueue()
-
-        if usesUITabDisplayedViewControllersOverflowPath() {
-            #expect(context.controller.tabBarMenuHasActiveUITabMoreSelection == true)
-            #expect(context.controller.tabBarMenuDisplayedViewControllersOverride(
-                for: overflowTab,
-                proposedViewControllers: []
-            )?.contains { containsViewController($0, descendant: overflowViewController) } == true)
-        } else {
-            #expect(context.controller.tabBarMenuHasActiveUITabMoreSelection == false)
-            #expect(context.controller.tabBarMenuDisplayedViewControllersOverride(
-                for: overflowTab,
-                proposedViewControllers: []
-            ) == nil)
-            #expect(selectedViewControllerInTabBar(in: context.controller) === context.controller.moreNavigationController)
-            #expect(transientViewController(in: context.controller) == nil)
-        }
-
-        let fallbackDelegate = MoreTabMenuDelegate(menu: nil)
-        context.controller.menuDelegate = fallbackDelegate
-
-        let controlHandler = context.controller.tabBar.tabBarMenuControlSelectionHandler
-
-        #expect(controlHandler != nil)
-
-        if let controlHandler {
-            context.controller.tabBar.tabBarMenuControlSelectionDidHandle = false
-            let shouldCallDefault = controlHandler(context.controller.tabBar, moreControl)
-            #expect(shouldCallDefault == true)
-            #expect(context.controller.tabBar.tabBarMenuControlSelectionDidHandle == true)
-        }
-
-        #expect(context.controller.tabBarMenuHasActiveUITabMoreSelection == false)
-        #expect(context.controller.tabBarMenuDisplayedViewControllersOverride(
-            for: overflowTab,
-            proposedViewControllers: []
-        ) == nil)
-        #expect(context.controller.tabBarMenuDisplayedViewControllersOverride(
-            for: moreTab,
-            proposedViewControllers: []
-        ) == nil)
-        #expect(navigationStack(of: context.controller.moreNavigationController).count == 1)
-        #expect(navigationStack(of: context.controller.moreNavigationController).first === moreListController(in: context.controller.moreNavigationController))
-        #expect(displayedViewControllers(in: overflowTab).map(ObjectIdentifier.init) == originalOverflowDisplayedIdentifiers)
-        #expect(displayedViewControllers(in: moreTab).map(ObjectIdentifier.init) == originalMoreDisplayedIdentifiers)
-    }
+    #expect(handler(context.controller.tabBar, control) == false)
+    #expect(context.controller.tabBar.tabBarMenuControlSelectionDidHandle)
+    #expect(context.controller.tabBarMenuSelectedTab === tab)
+    #expect(navigationStack(of: context.controller.moreNavigationController).map(ObjectIdentifier.init) == originalStack.map(ObjectIdentifier.init))
+    #expect(displayedViewControllers(in: tab).map(ObjectIdentifier.init) == originalDisplayed.map(ObjectIdentifier.init))
+    #expect(visibleContentTitles(in: context.controller) == [tab.title])
 }
 
 @Test("reselecting the same More UITab keeps overflow content active")

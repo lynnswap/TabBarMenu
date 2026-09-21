@@ -3,10 +3,10 @@ import ObjectiveC
 
 @MainActor
 public extension UITabBarController {
-    /// Selects the content represented by a tab.
+    /// Selects tab content programmatically, without a `TabBarMenuDelegate.didSelect` notification.
     /// - Note: Overflow `UITab` items use the private displayed-view path on iOS 26+ and fall back to selecting the More navigation stack directly on iOS 18 to keep selection reliable.
     /// - Parameter tab: The `UITab` whose content should become active.
-    /// - Returns: `true` when the tab belongs to this controller and selection was requested.
+    /// - Returns: Whether the content selection succeeded.
     @discardableResult
     func selectTabContent(_ tab: UITab) -> Bool {
         guard let index = tabs.firstIndex(where: { $0 === tab }),
@@ -14,28 +14,22 @@ public extension UITabBarController {
             return false
         }
 
-        scheduleTabContentSelection {
-            if self.isOverflowItemIndex(index, totalCount: self.tabs.count) {
-                _ = self.selectOverflowTabContent(
-                    resolvedViewController,
-                    syncedMoreItem: self.syncedMoreTabBarItemForOverflowSelection(),
-                    sourceTab: tab
-                )
-                return
-            }
-
-            _ = self.selectResolvedTabContent(
+        tabBarMenuCoordinator?.beginProgrammaticSelection()
+        defer { tabBarMenuCoordinator?.endProgrammaticSelection() }
+        if isOverflowItemIndex(index, totalCount: tabs.count) {
+            return selectOverflowTabContent(
                 resolvedViewController,
-                syncedTab: tab
+                syncedMoreItem: syncedMoreTabBarItemForOverflowSelection(),
+                sourceTab: tab
             )
         }
-        return true
+        return selectResolvedTabContent(resolvedViewController, syncedTab: tab)
     }
 
-    /// Selects the content represented by a view controller.
+    /// Selects view-controller content programmatically, without a `TabBarMenuDelegate.didSelect` notification.
     /// - Note: Overflow view controllers are presented with `UITabBarController`'s transient private API and keep the More item visually selected.
     /// - Parameter viewController: The view controller whose tab content should become active.
-    /// - Returns: `true` when the view controller belongs to this controller and selection was requested.
+    /// - Returns: Whether the content selection succeeded.
     @discardableResult
     func selectTabContent(_ viewController: UIViewController) -> Bool {
         guard let viewControllers,
@@ -47,27 +41,80 @@ public extension UITabBarController {
             ? nil
             : matchingTab(for: viewController)
 
-        scheduleTabContentSelection {
-            if self.isOverflowItemIndex(index, totalCount: viewControllers.count) {
-                _ = self.selectOverflowTabContent(
-                    viewController,
-                    syncedMoreItem: self.syncedMoreTabBarItemForOverflowSelection(),
-                    sourceTab: self.matchingTab(for: viewController)
-                )
-                return
-            }
-
-            _ = self.selectResolvedTabContent(
+        tabBarMenuCoordinator?.beginProgrammaticSelection()
+        defer { tabBarMenuCoordinator?.endProgrammaticSelection() }
+        if isOverflowItemIndex(index, totalCount: viewControllers.count) {
+            return selectOverflowTabContent(
                 viewController,
-                syncedTab: syncedTab
+                syncedMoreItem: syncedMoreTabBarItemForOverflowSelection(),
+                sourceTab: matchingTab(for: viewController)
             )
         }
-        return true
+        return selectResolvedTabContent(viewController, syncedTab: syncedTab)
     }
+
 }
 
 @MainActor
 extension UITabBarController {
+    func tabBarMenuIsMoreList(_ viewController: UIViewController?) -> Bool {
+        guard let viewController else { return false }
+        return viewController === moreListControllerObject()
+    }
+
+    func tabBarMenuContent(for viewController: UIViewController) -> TabBarContent? {
+        if !tabs.isEmpty {
+            if let tab = matchingTab(for: viewController) { return .tab(tab) }
+            let resolved = ObjectiveCInterop.performObjectSelector(
+                UIViewControllerRuntimeMethodNames.resolvedTab, on: viewController
+            ) as? UITab
+            if let resolved, tabs.contains(where: { $0 === resolved }) { return .tab(resolved) }
+        } else if viewControllers?.contains(where: { $0 === viewController }) == true {
+            return .viewController(viewController)
+        }
+        return nil
+    }
+
+    var tabBarMenuSelectedTab: UITab? {
+        // On iOS 18 the selected tab element can still name the previous visible tab
+        // while More is displaying the content selected through its navigation stack.
+        if let state = uiTabOverflowPresentationState,
+           tabBar.selectedItem === state.preservedMoreItem {
+            return state.sourceTab
+        }
+        if let moreItem = currentMoreTabBarItem(), tabBar.selectedItem === moreItem {
+            if let top = moreNavigationController.topViewController,
+               case .tab(let tab) = tabBarMenuContent(for: top) { return tab }
+            return tabBarMenuSelectedViewController.flatMap { matchingTab(for: $0) }
+        }
+        if let tab = currentSelectedTabElement(), tabs.contains(where: { $0 === tab }) {
+            return tab
+        }
+        return tabBarMenuSelectedViewController.flatMap { matchingTab(for: $0) }
+    }
+
+    var tabBarMenuSelectedViewController: UIViewController? {
+        if let transient = currentTransientViewController() { return transient }
+        let current = currentSelectedViewControllerInTabBar()
+        if let current, current !== moreNavigationController,
+           ownsTabContentViewController(current) { return current }
+        if let state = uiTabOverflowPresentationState,
+           tabBar.selectedItem === state.preservedMoreItem {
+            return state.targetViewController
+        }
+        guard current === moreNavigationController else { return nil }
+        let displayed = ObjectiveCInterop.performObjectSelector(
+            UIMoreNavigationControllerRuntimeMethodNames.displayedViewController,
+            on: moreNavigationController
+        ) as? UIViewController
+        let candidate = displayed === moreNavigationController
+            ? moreNavigationController.topViewController : displayed
+        guard let candidate, candidate !== moreListControllerObject() else { return nil }
+        return (viewControllers ?? []).first { owner in
+            owner === candidate || containsLegacyMoreTarget(owner, descendant: candidate)
+        }
+    }
+
     nonisolated private var usesUITabDisplayedViewControllersOverflowPath: Bool {
         if #available(iOS 26.0, *) {
             return true
@@ -754,10 +801,6 @@ extension UITabBarController {
             return viewController
         }
         return tab.resolvedMoreSelectionViewController
-    }
-
-    private func scheduleTabContentSelection(_ action: @escaping @MainActor () -> Void) {
-        action()
     }
 
     private func isOverflowItemIndex(_ index: Int, totalCount: Int) -> Bool {

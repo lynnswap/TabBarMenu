@@ -1,6 +1,7 @@
 import UIKit
 
 final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControllerDelegate {
+    weak var coordinator: TabBarMenuCoordinator?
     nonisolated(unsafe) weak var forwardedTabBarController: UITabBarController?
     weak var tabBarController: UITabBarController? {
         didSet {
@@ -70,6 +71,22 @@ final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControlle
         return proposedViewControllers
     }
 
+    func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+        coordinator?.willSelectNativeContent(.tab(tab))
+        let allowed = originalDelegate?.tabBarController?(tabBarController, shouldSelectTab: tab) ?? true
+        if !allowed { coordinator?.cancelNativeSelection() }
+        return allowed
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+        if tabBarController.tabs.isEmpty {
+            coordinator?.willSelectNativeContent(.viewController(viewController))
+        }
+        let allowed = originalDelegate?.tabBarController?(tabBarController, shouldSelect: viewController) ?? true
+        if !allowed { coordinator?.cancelNativeSelection() }
+        return allowed
+    }
+
     func tabBarController(
         _ tabBarController: UITabBarController,
         didSelectTab tab: UITab,
@@ -77,6 +94,7 @@ final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControlle
     ) {
         originalDelegate?.tabBarController?(tabBarController, didSelectTab: tab, previousTab: previousTab)
         tabBarController.tabBarMenuDidSelectTab(tab, previousTab: previousTab)
+        coordinator?.didSelectNativeContent(.tab(tab))
     }
 
     func tabBarController(
@@ -85,5 +103,8 @@ final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControlle
     ) {
         originalDelegate?.tabBarController?(tabBarController, didSelect: viewController)
         tabBarController.tabBarMenuDidSelectViewController(viewController)
+        if tabBarController.tabs.isEmpty {
+            coordinator?.didSelectNativeContent(.viewController(viewController))
+        }
     }
 }

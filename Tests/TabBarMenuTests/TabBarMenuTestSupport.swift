@@ -3,183 +3,81 @@ import UIKit
 @testable import TabBarMenu
 
 @MainActor
-final class TestMenuDelegate: NSObject, TabBarMenuDelegate {
+final class TestMenuDelegate: TabBarMenuDelegate {
     private(set) var requestedIdentifiers: [String?] = []
     private let menu: UIMenu
+    init(menu: UIMenu = UIMenu(children: [])) { self.menu = menu }
 
-    init(menu: UIMenu = UIMenu(children: [])) {
-        self.menu = menu
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
-        requestedIdentifiers.append(tab?.identifier)
-        return menu
+    func tabBarController(_ controller: UITabBarController, prepareFor interaction: TabBarInteraction, on item: TabBarItem) -> TabBarMenuPresentation? {
+        guard interaction == .longPress, case .tab(let tab) = item else { return nil }
+        requestedIdentifiers.append(tab.identifier)
+        return .init(menu: menu)
     }
 }
 
 @MainActor
-final class MoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
+final class MoreTabMenuDelegate: TabBarMenuDelegate {
     private(set) var requestedTabsCount = 0
     private let menu: UIMenu?
+    init(menu: UIMenu?) { self.menu = menu }
 
-    init(menu: UIMenu?) {
-        self.menu = menu
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+    func tabBarController(_ controller: UITabBarController, prepareFor interaction: TabBarInteraction, on item: TabBarItem) -> TabBarMenuPresentation? {
+        guard case .more = item else { return nil }
         requestedTabsCount += 1
-        return menu
+        return menu.map { .init(menu: $0) }
     }
 }
 
 @MainActor
-final class MoreTabSelectionDelegate: NSObject, TabBarMenuDelegate {
+final class MoreTabSelectionDelegate: TabBarMenuDelegate {
     private(set) var requestedTabs: [[UITab]] = []
-    private var selectionHandlers: [String: @MainActor () -> Void] = [:]
+    private var actions: [String: UIAction] = [:]
 
-    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
+    func tabBarController(_ controller: UITabBarController, prepareFor interaction: TabBarInteraction, on item: TabBarItem) -> TabBarMenuPresentation? {
+        guard case .more(let tabs, _) = item else { return nil }
         requestedTabs.append(tabs)
-        selectionHandlers = [:]
-        let actions = tabs.map { tab in
-            let title = tab.title
-            selectionHandlers[title] = { [weak tabBarController] in
-                guard let tabBarController else {
-                    return
-                }
-                _ = tabBarController.selectTabContent(tab)
-            }
-            return UIAction(title: title, image: tab.image) { _ in
-                self.selectionHandlers[title]?()
-            }
-        }
-        return UIMenu(children: actions)
+        let selectionActions = tabs.map { controller.selectionAction(for: $0) }
+        actions = Dictionary(uniqueKeysWithValues: selectionActions.map { ($0.title, $0) })
+        return .init(menu: UIMenu(children: selectionActions))
     }
 
     func performSelection(titled title: String) {
-        selectionHandlers[title]?()
+        if let action = actions[title] { UIControl().sendAction(action) }
     }
 }
 
 @MainActor
-final class MoreViewControllerSelectionDelegate: NSObject, TabBarMenuDelegate {
+final class MoreViewControllerSelectionDelegate: TabBarMenuDelegate {
     private(set) var requestedViewControllers: [[UIViewController]] = []
-    private var selectionHandlers: [String: @MainActor () -> Void] = [:]
+    private var actions: [String: UIAction] = [:]
 
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        menuForMoreTabWith viewControllers: [UIViewController]
-    ) -> UIMenu? {
+    func tabBarController(_ controller: UITabBarController, prepareFor interaction: TabBarInteraction, on item: TabBarItem) -> TabBarMenuPresentation? {
+        guard case .moreViewControllers(let viewControllers, _) = item else { return nil }
         requestedViewControllers.append(viewControllers)
-        selectionHandlers = [:]
-        let actions = viewControllers.map { viewController in
-            let title = viewController.title ?? viewController.tabBarItem.title ?? "Untitled"
-            selectionHandlers[title] = { [weak tabBarController] in
-                guard let tabBarController else {
-                    return
-                }
-                _ = tabBarController.selectTabContent(viewController)
-            }
-            return UIAction(title: title, image: viewController.tabBarItem.image) { _ in
-                self.selectionHandlers[title]?()
-            }
+        let selectionActions = viewControllers.map { viewController in
+            let action = controller.selectionAction(for: viewController)
+            action.title = viewController.title ?? viewController.tabBarItem.title ?? "Untitled"
+            return action
         }
-        return UIMenu(children: actions)
+        actions = Dictionary(uniqueKeysWithValues: selectionActions.map { ($0.title, $0) })
+        return .init(menu: UIMenu(children: selectionActions))
     }
 
     func performSelection(titled title: String) {
-        selectionHandlers[title]?()
+        if let action = actions[title] { UIControl().sendAction(action) }
     }
 }
 
 @MainActor
-final class DualMoreTabMenuDelegate: NSObject, TabBarMenuDelegate {
-    private(set) var requestedTabsCount = 0
-    private(set) var requestedViewControllersCount = 0
-    private let tabsMenu: UIMenu?
-    private let viewControllersMenu: UIMenu?
-
-    init(tabsMenu: UIMenu?, viewControllersMenu: UIMenu?) {
-        self.tabsMenu = tabsMenu
-        self.viewControllersMenu = viewControllersMenu
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
-        requestedTabsCount += 1
-        return tabsMenu
-    }
-
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        menuForMoreTabWith viewControllers: [UIViewController]
-    ) -> UIMenu? {
-        requestedViewControllersCount += 1
-        return viewControllersMenu
-    }
-}
-
-@MainActor
-final class DualItemMenuDelegate: NSObject, TabBarMenuDelegate {
-    private(set) var requestedTabIdentifiers: [String?] = []
-    private(set) var requestedViewControllerTitles: [String?] = []
-    private let tabMenu: UIMenu?
-    private let viewControllerMenu: UIMenu?
-
-    init(
-        tabMenu: UIMenu? = UIMenu(children: []),
-        viewControllerMenu: UIMenu? = UIMenu(children: [])
-    ) {
-        self.tabMenu = tabMenu
-        self.viewControllerMenu = viewControllerMenu
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
-        requestedTabIdentifiers.append(tab?.identifier)
-        return tabMenu
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
-        requestedViewControllerTitles.append(viewController?.title)
-        return viewControllerMenu
-    }
-}
-
-@MainActor
-final class MoreTabPresentationDelegate: NSObject, TabBarMenuDelegate {
-    private(set) var configuredTabs: [UITab?] = []
-    private let menu: UIMenu
-
-    init(menu: UIMenu = UIMenu(children: [])) {
-        self.menu = menu
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, menuForMoreTabWith tabs: [UITab]) -> UIMenu? {
-        menu
-    }
-
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        configureMenuPresentationFor tab: UITab?,
-        tabFrame: CGRect,
-        in containerView: UIView,
-        menuHostButton: UIButton
-    ) -> TabBarMenuAnchorPlacement? {
-        configuredTabs.append(tab)
-        return nil
-    }
-}
-
-@MainActor
-final class ViewControllerMenuDelegate: NSObject, TabBarMenuDelegate {
+final class ViewControllerMenuDelegate: TabBarMenuDelegate {
     private(set) var requestedTitles: [String?] = []
     private let menu: UIMenu
+    init(menu: UIMenu = UIMenu(children: [])) { self.menu = menu }
 
-    init(menu: UIMenu = UIMenu(children: [])) {
-        self.menu = menu
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, viewController: UIViewController?) -> UIMenu? {
-        requestedTitles.append(viewController?.title)
-        return menu
+    func tabBarController(_ controller: UITabBarController, prepareFor interaction: TabBarInteraction, on item: TabBarItem) -> TabBarMenuPresentation? {
+        guard interaction == .longPress, case .viewController(let viewController) = item else { return nil }
+        requestedTitles.append(viewController.title)
+        return .init(menu: menu)
     }
 }
 
@@ -227,8 +125,8 @@ final class NoViewTabBarItem: UITabBarItem {
 
 @MainActor
 final class SelfDelegatingTabBarController: UITabBarController, TabBarMenuDelegate {
-    func tabBarController(_ tabBarController: UITabBarController, tab: UITab?) -> UIMenu? {
-        UIMenu(children: [])
+    func tabBarController(_ controller: UITabBarController, prepareFor interaction: TabBarInteraction, on item: TabBarItem) -> TabBarMenuPresentation? {
+        .init(menu: UIMenu(children: []))
     }
 }
 
@@ -753,24 +651,14 @@ func usesUITabDisplayedViewControllersOverflowPath() -> Bool {
 }
 
 @MainActor
-func makeMoreMenuRequest(
-    in tabBarController: UITabBarController,
-    delegate: TabBarMenuContentDelegate
-) -> MoreMenuRequest? {
-    MoreMenuRequest.make(
-        delegate: delegate,
-        core: TabBarMenuRequestCore(configuration: tabBarController.menuConfiguration)
-    )
-}
-
-@MainActor
 @discardableResult
 func requestMoreMenu(
     in tabBarController: UITabBarController,
-    delegate: TabBarMenuContentDelegate
+    delegate: TabBarMenuDelegate
 ) -> UIMenu? {
-    makeMoreMenuRequest(in: tabBarController, delegate: delegate)?
-        .menu(in: tabBarController, delegate: delegate)
+    guard let index = resolvedMoreTabIndex(in: tabBarController),
+          let item = tabBarController.tabBarMenuItem(at: index) else { return nil }
+    return delegate.tabBarController(tabBarController, prepareFor: .tap, on: item)?.menu
 }
 
 @MainActor

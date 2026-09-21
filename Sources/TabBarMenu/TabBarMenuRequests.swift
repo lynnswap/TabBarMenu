@@ -7,13 +7,6 @@ struct PresentationContext {
 }
 
 @MainActor
-struct MenuPlan {
-    let menu: UIMenu
-    let placement: TabBarMenuAnchorPlacement?
-    let hostButton: UIButton
-}
-
-@MainActor
 struct TabBarMenuRequestCore {
     let configuration: TabBarMenuConfiguration
 
@@ -204,200 +197,92 @@ private func identityUniqued<Object: AnyObject>(_ objects: [Object]) -> [Object]
     }
 }
 
+/// A real content selection, separate from the synthetic More item.
 @MainActor
-enum MoreMenuRequest {
-    case tabs(TabBarMenuTabRequestContext)
-    case viewControllers(TabBarMenuViewControllerRequestContext)
+enum TabBarContent: @MainActor Equatable {
+    case tab(UITab)
+    case viewController(UIViewController)
 
-    func totalCount(in tabBarController: UITabBarController) -> Int {
-        switch self {
-        case .tabs(let context):
-            return context.totalCount(in: tabBarController)
-        case .viewControllers(let context):
-            return context.totalCount(in: tabBarController)
-        }
-    }
-
-    func moreTabStartIndex(in tabBarController: UITabBarController) -> Int? {
-        switch self {
-        case .tabs(let context):
-            return context.core.moreTabStartIndex(
-                totalCount: context.totalCount(in: tabBarController),
-                in: tabBarController
-            )
-        case .viewControllers(let context):
-            return context.core.moreTabStartIndex(
-                totalCount: context.totalCount(in: tabBarController),
-                in: tabBarController
-            )
-        }
-    }
-
-    func menu(in tabBarController: UITabBarController, delegate: TabBarMenuContentDelegate) -> UIMenu? {
-        switch self {
-        case .tabs(let context):
-            let items = context.moreItems(in: tabBarController)
-            guard !items.isEmpty else {
-                return nil
-            }
-            return delegate.tabBarController?(tabBarController, menuForMoreTabWith: items)
-        case .viewControllers(let context):
-            let items = context.moreMenuItems(in: tabBarController)
-            guard !items.isEmpty else {
-                return nil
-            }
-            return delegate.tabBarController?(tabBarController, menuForMoreTabWith: items)
-        }
-    }
-
-    func matches(item: UITabBarItem, in tabBarController: UITabBarController) -> Bool {
-        switch self {
-        case .tabs(let context):
-            return context.matchesItem(item, in: tabBarController)
-        case .viewControllers(let context):
-            return context.matchesItem(item, in: tabBarController)
-        }
-    }
-
-    func isMoreTabIndex(_ index: Int, in tabBarController: UITabBarController) -> Bool {
-        switch self {
-        case .tabs(let context):
-            return context.core.isMoreTabIndex(
-                index,
-                totalCount: context.totalCount(in: tabBarController),
-                in: tabBarController
-            )
-        case .viewControllers(let context):
-            return context.core.isMoreTabIndex(
-                index,
-                totalCount: context.totalCount(in: tabBarController),
-                in: tabBarController
-            )
-        }
-    }
-
-    func menuPresentationPlacement(
-        in tabBarController: UITabBarController,
-        presentationContext: PresentationContext,
-        hostButton: UIButton,
-        delegate: TabBarMenuDelegate
-    ) -> TabBarMenuAnchorPlacement? {
-        // More tabs pass nil to match the content delegate semantics.
-        switch self {
-        case .tabs:
-            return delegate.tabBarController(
-                tabBarController,
-                configureMenuPresentationFor: (nil as UITab?),
-                tabFrame: presentationContext.tabFrame,
-                in: presentationContext.containerView,
-                menuHostButton: hostButton
-            )
-        case .viewControllers:
-            return delegate.tabBarController(
-                tabBarController,
-                configureMenuPresentationFor: (nil as UIViewController?),
-                tabFrame: presentationContext.tabFrame,
-                in: presentationContext.containerView,
-                menuHostButton: hostButton
-            )
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.tab(let lhs), .tab(let rhs)): lhs === rhs
+        case (.viewController(let lhs), .viewController(let rhs)): lhs === rhs
+        default: false
         }
     }
 }
 
-extension MoreMenuRequest {
-    static func make(delegate: TabBarMenuContentDelegate?, core: TabBarMenuRequestCore) -> MoreMenuRequest? {
-        guard let delegate else {
-            return nil
+extension TabBarItem {
+    var content: TabBarContent? {
+        switch self {
+        case .tab(let tab): .tab(tab)
+        case .more(_, let tab): tab.map(TabBarContent.tab)
+        case .viewController(let controller): .viewController(controller)
+        case .moreViewControllers(_, let controller): controller.map(TabBarContent.viewController)
         }
+    }
 
-        let tabsMethod: ((UITabBarController, [UITab]) -> UIMenu?)? = delegate.tabBarController
-        if tabsMethod != nil {
-            return .tabs(TabBarMenuTabRequestContext(core: core))
+    var isMore: Bool {
+        switch self {
+        case .more, .moreViewControllers: true
+        case .tab, .viewController: false
         }
-
-        let viewControllersMethod: ((UITabBarController, [UIViewController]) -> UIMenu?)? = delegate.tabBarController
-        if viewControllersMethod != nil {
-            return .viewControllers(TabBarMenuViewControllerRequestContext(core: core))
-        }
-
-        return nil
     }
 }
 
-@MainActor
-enum ItemMenuRequest {
-    case tabs(TabBarMenuTabRequestContext)
-    case viewControllers(TabBarMenuViewControllerRequestContext)
-}
+extension UITabBarController {
+    func tabBarMenuItem(at index: Int) -> TabBarItem? {
+        let core = TabBarMenuRequestCore(configuration: menuConfiguration)
+        if !tabs.isEmpty {
+            let context = TabBarMenuTabRequestContext(core: core)
+            if core.isMoreTabIndex(index, totalCount: tabs.count, in: self) {
+                let moreTabs = context.moreItems(in: self)
+                let selected = tabBarMenuSelectedTab.flatMap { selected in
+                    moreTabs.contains { $0 === selected } ? selected : nil
+                }
+                return .more(tabs: moreTabs, selectedTab: selected)
+            }
+            return context.itemForMenu(at: index, in: self).map(TabBarItem.tab)
+        }
+        let context = TabBarMenuViewControllerRequestContext(core: core)
+        if core.isMoreTabIndex(index, totalCount: context.totalCount(in: self), in: self) {
+            let controllers = context.moreMenuItems(in: self)
+            let selected = tabBarMenuSelectedViewController.flatMap { selected in
+                controllers.contains { $0 === selected } ? selected : nil
+            }
+            return .moreViewControllers(viewControllers: controllers, selectedViewController: selected)
+        }
+        return context.itemForMenu(at: index, in: self).map(TabBarItem.viewController)
+    }
 
-extension ItemMenuRequest {
-    func menu(
-        forItemAt index: Int,
-        in tabBarController: UITabBarController,
-        delegate: TabBarMenuDelegate
-    ) -> UIMenu? {
-        switch self {
-        case .tabs(let requestContext):
-            guard let tab = requestContext.itemForMenu(at: index, in: tabBarController) else {
-                return nil
-            }
-            return delegate.tabBarController?(tabBarController, tab: tab)
-        case .viewControllers(let requestContext):
-            guard let viewController = requestContext.itemForMenu(at: index, in: tabBarController) else {
-                return nil
-            }
-            return delegate.tabBarController?(tabBarController, viewController: viewController)
+    var tabBarMenuSelectedContent: TabBarContent? {
+        if !tabs.isEmpty {
+            return tabBarMenuSelectedTab.map(TabBarContent.tab)
+        }
+        return tabBarMenuSelectedViewController.map(TabBarContent.viewController)
+    }
+
+    func tabBarMenuOwns(_ content: TabBarContent) -> Bool {
+        switch content {
+        case .tab(let tab): tabs.contains { $0 === tab }
+        case .viewController(let controller): viewControllers?.contains { $0 === controller } == true
         }
     }
 
-    func menuPresentationPlacement(
-        forItemAt index: Int,
-        in tabBarController: UITabBarController,
-        presentationContext: PresentationContext,
-        hostButton: UIButton,
-        delegate: TabBarMenuDelegate
-    ) -> TabBarMenuAnchorPlacement? {
-        switch self {
-        case .tabs(let requestContext):
-            guard let tab = requestContext.itemForMenu(at: index, in: tabBarController) else {
-                return nil
-            }
-            return delegate.tabBarController(
-                tabBarController,
-                configureMenuPresentationFor: tab,
-                tabFrame: presentationContext.tabFrame,
-                in: presentationContext.containerView,
-                menuHostButton: hostButton
-            )
-        case .viewControllers(let requestContext):
-            guard let viewController = requestContext.itemForMenu(at: index, in: tabBarController) else {
-                return nil
-            }
-            return delegate.tabBarController(
-                tabBarController,
-                configureMenuPresentationFor: viewController,
-                tabFrame: presentationContext.tabFrame,
-                in: presentationContext.containerView,
-                menuHostButton: hostButton
-            )
+    func tabBarMenuIsOverflow(_ content: TabBarContent) -> Bool {
+        let index: Int?
+        let count: Int
+        switch content {
+        case .tab(let tab):
+            index = tabs.firstIndex { $0 === tab }
+            count = tabs.count
+        case .viewController(let controller):
+            index = viewControllers?.firstIndex { $0 === controller }
+            count = viewControllers?.count ?? 0
         }
-    }
-
-    static func make(delegate: TabBarMenuDelegate?, core: TabBarMenuRequestCore) -> ItemMenuRequest? {
-        guard let delegate else {
-            return nil
-        }
-
-        let tabsMethod: ((UITabBarController, UITab?) -> UIMenu?)? = delegate.tabBarController
-        if tabsMethod != nil {
-            return .tabs(TabBarMenuTabRequestContext(core: core))
-        }
-
-        let viewControllersMethod: ((UITabBarController, UIViewController?) -> UIMenu?)? = delegate.tabBarController
-        if viewControllersMethod != nil {
-            return .viewControllers(TabBarMenuViewControllerRequestContext(core: core))
-        }
-
-        return nil
+        guard let index,
+              let start = TabBarMenuRequestCore(configuration: menuConfiguration)
+                .moreTabStartIndex(totalCount: count, in: self) else { return false }
+        return index >= start
     }
 }
