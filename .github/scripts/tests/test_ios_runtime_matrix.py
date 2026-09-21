@@ -26,11 +26,12 @@ class RuntimeMatrixTests(unittest.TestCase):
     def test_every_supported_minor_and_patch_version_is_selected_in_version_order(self):
         installed = [runtime(version) for version in (
             "27.2", "18.6", "26.4.1", "18.0", "26.2", "27.0", "26.0", "27.10",
+            "26.0.1", "26.1", "26.0.2", "26.1.1",
         )]
         jobs = matrix.test_matrix(matrix.supported_runtimes(installed))["include"]
         self.assertEqual(
             [job["version"] for job in jobs],
-            ["18.0", "18.6", "26.0", "26.2", "26.4.1", "27.0", "27.2", "27.10"],
+            ["18.0", "18.6", "26.1", "26.1.1", "26.2", "26.4.1", "27.0", "27.2", "27.10"],
         )
 
     def test_unavailable_runtimes_other_platforms_and_other_majors_are_excluded(self):

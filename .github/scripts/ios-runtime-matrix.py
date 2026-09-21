@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Discover installed iOS 18, 26, and 27 runtimes and create test Simulators."""
+"""Discover supported installed iOS runtimes and create test Simulators."""
 
 import argparse
 import json
@@ -21,7 +21,8 @@ def supported_runtimes(runtimes):
             continue
         if not runtime.get("isAvailable", False):
             continue
-        if version_components(runtime["version"])[0] not in {18, 26, 27}:
+        version = version_components(runtime["version"])
+        if version[0] not in {18, 26, 27} or (26, 0, 0) <= version < (26, 1, 0):
             continue
         selected[runtime["identifier"]] = runtime
     return sorted(selected.values(), key=lambda runtime: version_components(runtime["version"]))
@@ -29,7 +30,7 @@ def supported_runtimes(runtimes):
 
 def test_matrix(runtimes):
     if not runtimes:
-        raise ValueError("No available iOS 18, 26, or 27 runtime is installed.")
+        raise ValueError("No available iOS 18.x, 26.1+, or 27.x runtime is installed.")
     return {"include": [
         {"runtime": runtime["identifier"], "version": runtime["version"]}
         for runtime in runtimes
