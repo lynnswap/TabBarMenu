@@ -200,6 +200,12 @@ extension UITabBarController {
         syncedMoreItem: UITabBarItem?,
         sourceTab: UITab?
     ) -> Bool {
+        // UIKit may already own this presentation after the selected tab moves into More.
+        if !tabBarMenuIsPresentingTransientOverflowContent,
+           unsafe selectedViewController === viewController {
+            return true
+        }
+
         guard let moreItem = syncedMoreItem
             ?? uiTabOverflowPresentationState?.preservedMoreItem
             ?? currentMoreTabBarItem() else {
@@ -243,6 +249,9 @@ extension UITabBarController {
         syncedMoreItem: UITabBarItem
     ) -> Bool {
         let isReplacingActiveUITabOverflow = uiTabOverflowPresentationState != nil
+        // UIKit can populate More before the helper records a presentation.
+        let isReplacingLegacyMoreContent = isReplacingActiveUITabOverflow
+            || moreNavigationController.viewControllers.count > 1
         let previousState = uiTabOverflowPresentationState
 
         if currentTransientViewController() != nil {
@@ -321,7 +330,7 @@ extension UITabBarController {
         }
 
         if !usesUITabDisplayedViewControllersOverflowPath {
-            let shouldFinishReplacement = isReplacingActiveUITabOverflow
+            let shouldFinishReplacement = isReplacingLegacyMoreContent
             if shouldFinishReplacement {
                 isReplacingUITabOverflowSelection = true
             }

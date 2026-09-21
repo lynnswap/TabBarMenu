@@ -2,6 +2,71 @@ import Testing
 import UIKit
 @testable import TabBarMenu
 
+@Test(
+    "Reselecting an overflow tab after staged tab setup preserves its navigation content",
+    arguments: [false, true], [false, true]
+)
+@MainActor
+func stagedOverflowReselectionPreservesNavigationContent(
+    selectBeforeAttachingWindow: Bool,
+    selectByViewController: Bool
+) async throws {
+    let roots = (0..<6).map {
+        makeContentViewController(title: "Root \($0)", itemTitle: "Tab \($0)")
+    }
+    let navigationControllers = roots.map { UINavigationController(rootViewController: $0) }
+    let tabs = navigationControllers.enumerated().map { index, navigationController in
+        UITab(title: "Tab \(index)", image: nil, identifier: "tab.\(index)") { _ in navigationController }
+    }
+    let controller = UITabBarController()
+    controller.mode = .tabBar
+    controller.traitOverrides.horizontalSizeClass = .compact
+    let delegate = MoreTabSelectionDelegate()
+    controller.menuDelegate = delegate
+    if selectByViewController {
+        controller.setViewControllers([navigationControllers[5]], animated: false)
+        controller.setViewControllers(navigationControllers, animated: false)
+    } else {
+        controller.setTabs([tabs[5]], animated: false)
+        controller.setTabs(tabs, animated: false)
+    }
+
+    func selectContent(at index: Int) {
+        UIView.performWithoutAnimation {
+            if selectByViewController {
+                #expect(controller.selectTabContent(navigationControllers[index]))
+            } else {
+                #expect(controller.selectTabContent(tabs[index]))
+            }
+        }
+    }
+
+    if selectBeforeAttachingWindow {
+        selectContent(at: 5)
+    }
+    let host = WindowHost(rootViewController: controller)
+    defer { withExtendedLifetime((host, delegate)) {} }
+    if !selectBeforeAttachingWindow {
+        selectContent(at: 5)
+    }
+    await drainMainQueue()
+    host.window.layoutIfNeeded()
+
+    try #require(roots[5].viewIfLoaded?.window === host.window)
+    #expect(visibleContentTitles(in: controller) == ["Root 5"])
+
+    for index in [5, 4, 5, 0] {
+        selectContent(at: index)
+        await drainMainQueue()
+        host.window.layoutIfNeeded()
+        #expect(roots[index].viewIfLoaded?.window === host.window, "Selected tab \(index)")
+        #expect(visibleContentTitles(in: controller) == [try #require(roots[index].title)], "Selected tab \(index)")
+        for previousIndex in [4, 5] where previousIndex != index {
+            #expect(navigationControllers[previousIndex].viewControllers.first === roots[previousIndex])
+        }
+    }
+}
+
 @Test("More navigation tabs restore their roots when switching content")
 @MainActor
 func moreNavigationTabsRestoreRootsWhenSwitchingContent() async throws {
