@@ -136,6 +136,7 @@ final class WindowHost {
 
     init(rootViewController: UIViewController) {
         window = UIWindow(frame: UIScreen.main.bounds)
+        window.windowScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         window.rootViewController = rootViewController
         window.makeKeyAndVisible()
         rootViewController.loadViewIfNeeded()
