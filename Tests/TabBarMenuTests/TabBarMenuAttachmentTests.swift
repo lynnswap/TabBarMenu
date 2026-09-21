@@ -2,18 +2,37 @@ import Testing
 import UIKit
 @testable import TabBarMenu
 
+@Test("layout handler delivers each layout pass once", arguments: [false, true])
+@MainActor
+func layoutHandlerDeliversEachLayoutPassOnce(observeFrame: Bool) {
+    let tabBar = LayoutCountingTabBar()
+    let host = StandaloneTabBarHost(tabBar: tabBar)
+    let recorder = TabBarLayoutRecorder(tabBar: tabBar)
+    let observation = observeFrame ? tabBar.observe(\.frame, options: [.new]) { _, _ in } : nil
+    defer { observation?.invalidate() }
+    let initialLayoutPassCount = tabBar.layoutPassCount
+    let initialEventCount = recorder.events.count
+
+    tabBar.items = makeTabBarItems(count: 3)
+    host.layoutIfNeeded()
+
+    let layoutPassCount = tabBar.layoutPassCount - initialLayoutPassCount
+    let eventCount = recorder.events.count - initialEventCount
+    #expect(layoutPassCount > 0)
+    #expect(eventCount == layoutPassCount)
+    #expect(recorder.events.last == [0, 1, 2])
+}
+
 @Test("layout handler runs when items are assigned and laid out")
 @MainActor
 func layoutHandlerRunsOnItemsAssignment() {
     let host = StandaloneTabBarHost()
     let recorder = TabBarLayoutRecorder(tabBar: host.tabBar)
     let updatedItems = makeTabBarItems(count: 3)
-    let baseCount = recorder.events.count
 
     host.tabBar.items = updatedItems
     host.layoutIfNeeded()
 
-    #expect(recorder.events.count == baseCount + 1)
     #expect(recorder.events.last == updatedItems.map(\.tag))
 }
 
@@ -23,12 +42,10 @@ func layoutHandlerRunsOnSetItems() {
     let host = StandaloneTabBarHost()
     let recorder = TabBarLayoutRecorder(tabBar: host.tabBar)
     let updatedItems = makeTabBarItems(count: 1)
-    let baseCount = recorder.events.count
 
     host.tabBar.setItems(updatedItems, animated: false)
     host.layoutIfNeeded()
 
-    #expect(recorder.events.count == baseCount + 1)
     #expect(recorder.events.last == updatedItems.map(\.tag))
 }
 
@@ -39,33 +56,24 @@ func layoutHandlerRunsForInPlaceItemMutations() {
     let recorder = TabBarLayoutRecorder(tabBar: host.tabBar)
     host.tabBar.items = makeTabBarItems(count: 2)
     host.layoutIfNeeded()
-    var expectedCount = recorder.events.count
 
     host.tabBar.items?.append(UITabBarItem(title: "Append", image: nil, tag: 99))
     host.layoutIfNeeded()
-    expectedCount += 1
-    #expect(recorder.events.count == expectedCount)
     #expect(recorder.events.last == [0, 1, 99])
 
     if var items = host.tabBar.items, !items.isEmpty {
         items[0] = UITabBarItem(title: "Replace", image: nil, tag: 100)
         host.tabBar.items = items
         host.layoutIfNeeded()
-        expectedCount += 1
-        #expect(recorder.events.count == expectedCount)
         #expect(recorder.events.last == [100, 1, 99])
     }
 
     host.tabBar.items?.insert(UITabBarItem(title: "Insert", image: nil, tag: 101), at: 1)
     host.layoutIfNeeded()
-    expectedCount += 1
-    #expect(recorder.events.count == expectedCount)
     #expect(recorder.events.last == [100, 101, 1, 99])
 
     _ = host.tabBar.items?.removeLast()
     host.layoutIfNeeded()
-    expectedCount += 1
-    #expect(recorder.events.count == expectedCount)
     #expect(recorder.events.last == [100, 101, 1])
 }
 
@@ -76,14 +84,12 @@ func layoutHandlerRunsAfterKVOAddsRuntimeSubclass() {
     let recorder = TabBarLayoutRecorder(tabBar: host.tabBar)
     let observation = host.tabBar.observe(\.frame, options: [.new]) { _, _ in }
     let updatedItems = makeTabBarItems(count: 3)
-    let baseCount = recorder.events.count
 
     defer { observation.invalidate() }
 
     host.tabBar.items = updatedItems
     host.layoutIfNeeded()
 
-    #expect(recorder.events.count == baseCount + 1)
     #expect(recorder.events.last == updatedItems.map(\.tag))
 }
 
@@ -105,7 +111,7 @@ func layoutHandlerReattachesAfterKVOAddsRuntimeSubclass() {
     host.tabBar.items = updatedItems
     host.layoutIfNeeded()
 
-    #expect(reattachedEvents == [updatedItems.map(\.tag)])
+    #expect(reattachedEvents.last == updatedItems.map(\.tag))
 }
 
 @Test("menuDelegate attaches long-press gestures")
