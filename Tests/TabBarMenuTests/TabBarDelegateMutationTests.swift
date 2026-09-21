@@ -241,12 +241,104 @@ func selectionCallbackReplacesForwardedDelegate(usesUITab: Bool) throws {
 
 @MainActor
 private final class MutationNavigationDelegate: NSObject, UINavigationControllerDelegate {
+    var willShow: ((UINavigationController, UIViewController) -> Void)?
     var didShow: (() -> Void)?
+    var shown: [UIViewController] = []
+    func navigationController(_ navigationController: UINavigationController, willShow viewController: UIViewController, animated: Bool) {
+        willShow?(navigationController, viewController)
+    }
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
+        shown.append(viewController)
         let action = didShow
         didShow = nil
         action?()
     }
+}
+
+@Test("More navigation forwards callbacks to a delegate replaced without another tab-bar interaction",
+      arguments: [false, true], ["beforeList", "afterList", "willShowList", "didShowList", "willShowRow"])
+@MainActor
+func replacementDelegateForMoreRows(usesUITab: Bool, phase: String) async throws {
+    let context = DelegateMutationContext(usesUITab: usesUITab, count: 6)
+    defer { withExtendedLifetime(context) {} }
+    let navigation = context.controller.moreNavigationController
+    let original = MutationNavigationDelegate()
+    let replacement = MutationNavigationDelegate()
+    navigation.delegate = original
+    let menuDelegate = MutationMenuDelegate()
+    context.controller.menuDelegate = menuDelegate
+
+    if phase == "beforeList" {
+        navigation.delegate = replacement
+    } else if phase == "didShowList" {
+        original.didShow = { navigation.delegate = replacement }
+    } else if phase == "willShowList" || phase == "willShowRow" {
+        original.willShow = { navigation, shown in
+            let isList = context.controller.tabBarMenuIsMoreList(shown)
+            if isList == (phase == "willShowList") {
+                navigation.delegate = replacement
+            }
+        }
+    }
+    let list = try #require(moreListController(in: navigation))
+    navigation.delegate?.navigationController?(navigation, willShow: list, animated: false)
+    navigation.delegate?.navigationController?(navigation, didShow: list, animated: false)
+    if phase == "afterList" { navigation.delegate = replacement }
+    let target = context.viewControllers[5]
+    navigation.delegate?.navigationController?(navigation, willShow: target, animated: false)
+    #expect(navigation.delegate is TabBarMenuMoreNavigationDelegateProxy)
+    navigation.delegate?.navigationController?(navigation, didShow: target, animated: false)
+    #expect(replacement.shown.filter { $0 === target }.count == 1)
+    #expect(!original.shown.contains { $0 === target })
+    context.controller.menuDelegate = nil
+    #expect(navigation.delegate === replacement)
+}
+
+@Test("More delegate observation follows coordinator reattachment")
+@MainActor
+func moreDelegateObservationReattachment() {
+    let first = DelegateMutationContext(usesUITab: true, count: 6)
+    let second = DelegateMutationContext(usesUITab: true, count: 6)
+    defer { withExtendedLifetime((first, second)) {} }
+    let original = MutationNavigationDelegate()
+    let replacement = MutationNavigationDelegate()
+    first.controller.moreNavigationController.delegate = original
+    let coordinator = TabBarMenuCoordinator()
+    let menuDelegate = MutationMenuDelegate()
+    coordinator.delegate = menuDelegate
+    coordinator.attach(to: first.controller)
+    coordinator.attach(to: second.controller)
+    #expect(first.controller.moreNavigationController.delegate === original)
+    first.controller.moreNavigationController.delegate = replacement
+    #expect(first.controller.moreNavigationController.delegate === replacement)
+    second.controller.moreNavigationController.delegate = replacement
+    #expect(second.controller.moreNavigationController.delegate is TabBarMenuMoreNavigationDelegateProxy)
+    coordinator.detach()
+    #expect(second.controller.moreNavigationController.delegate === replacement)
+    second.controller.moreNavigationController.delegate = nil
+    #expect(second.controller.moreNavigationController.delegate == nil)
+}
+
+@Test("Clearing the More delegate stops forwarding and is restored on detachment", arguments: [false, true])
+@MainActor
+func clearedMoreDelegateAndDetachment(usesUITab: Bool) async throws {
+    let context = DelegateMutationContext(usesUITab: usesUITab, count: 6)
+    defer { withExtendedLifetime(context) {} }
+    let navigation = context.controller.moreNavigationController
+    let original = MutationNavigationDelegate()
+    navigation.delegate = original
+    let menuDelegate = MutationMenuDelegate()
+    context.controller.menuDelegate = menuDelegate
+    navigation.delegate = nil
+    let target = context.viewControllers[5]
+    let receiver = try #require(navigation.delegate)
+    receiver.navigationController?(navigation, willShow: target, animated: false)
+    receiver.navigationController?(navigation, didShow: target, animated: false)
+    #expect(original.shown.isEmpty)
+    context.controller.menuDelegate = nil
+    #expect(navigation.delegate == nil)
+    navigation.delegate = original
+    #expect(navigation.delegate === original)
 }
 
 @Test("More selection completion precedes changes in the forwarded navigation delegate", arguments: [false, true], [false, true])
@@ -260,10 +352,11 @@ func forwardedMoreDelegateMutatesSelection(usesUITab: Bool, replacesContent: Boo
     let menuDelegate = MutationMenuDelegate()
     context.controller.menuDelegate = menuDelegate
     navigation.loadViewIfNeeded()
-    let proxy = try #require(navigation.delegate)
+    let proxy = try #require(navigation.delegate as? TabBarMenuMoreNavigationDelegateProxy)
+    let coordinator = try #require(context.controller.tabBarMenuCoordinator)
     let target = context.viewControllers[5]
-    proxy.navigationController?(navigation, willShow: target, animated: false)
-    navigation.delegate = nil
+    // Stage the displayed state before supplying the callback under test.
+    coordinator.beginProgrammaticSelection()
     navigation.setViewControllers([try #require(moreListController(in: navigation)), target], animated: false)
     #expect(ObjectiveCInterop.performVoidSelector(
         UITabBarControllerRuntimeMethodNames.setSelectedViewControllerAndNotify,
@@ -274,8 +367,12 @@ func forwardedMoreDelegateMutatesSelection(usesUITab: Bool, replacesContent: Boo
         on: context.controller, with: try #require(moreTabBarItem(in: context.controller))
     ))
     setDisplayedViewController(target, in: navigation)
-    navigation.delegate = proxy
+    coordinator.endProgrammaticSelection()
+    coordinator.willSelectNativeContent(context.content(at: 5))
+    proxy.navigationController(navigation, willShow: target, animated: false)
+    var forwarded = false
     original.didShow = {
+        forwarded = true
         #expect(menuDelegate.selections.count == 1)
         if replacesContent {
             context.replaceContent()
@@ -283,11 +380,12 @@ func forwardedMoreDelegateMutatesSelection(usesUITab: Bool, replacesContent: Boo
             context.selectProgrammatically(at: 0)
         }
     }
-    proxy.navigationController?(navigation, didShow: target, animated: false)
+    proxy.navigationController(navigation, didShow: target, animated: false)
     await drainMainQueue()
+    #expect(forwarded)
     #expect(menuDelegate.selections.count == 1)
     #expect(menuDelegate.selections.first?.content == context.content(at: 5))
-    #expect(menuDelegate.selections.first?.previous == nil)
+    #expect(menuDelegate.selections.first?.previous == context.content(at: 5))
     #expect(menuDelegate.selections.first?.isOverflow == true)
 }
 

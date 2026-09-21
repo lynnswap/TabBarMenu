@@ -28,5 +28,6 @@
 - `TabBarMenu` tests use Swift Testing (`import Testing`, `@Test`, `#expect`).
 - When changing behavior, add or update tests for the affected public behavior or bug fix.
 - Focus automated coverage on package-level behavior, controller-level behavior, and tab interaction flows.
-- This package does not have a dedicated UI test target. Use `Tests/TabBarMenuTests` for automated verification, and use the demo app only for manual checks when needed.
-- Demo app UI tests are not part of the required self-check for package changes unless the user explicitly asks for demo UI validation.
+- Keep unit and integration coverage in Swift Testing under `Tests/TabBarMenuTests`. Direct delegate calls verify callback handling; they do not establish UIKit's input-driven callback order or transition lifecycle.
+- Use `Examples/TabBarDemo/TabBarDemoUITests` only for paths that require real taps or long presses. For More delegate replacement, run `xcodebuild test -project Examples/TabBarDemo/TabBarDemo.xcodeproj -scheme TabBarDemo -destination 'platform=iOS Simulator,id=<UDID>' -only-testing:TabBarDemoUITests/TabBarDemoUITests/testNativeMoreRowAfterDelegateReplacement -only-testing:TabBarDemoUITests/TabBarDemoUITests/testNativeMoreRowAfterDelegateReplacementInViewControllerMode -parallel-testing-enabled NO`.
+- Run affected demo UI tests when changing those input paths. The CI runtime matrix continues to use the hosted Swift Testing suite.

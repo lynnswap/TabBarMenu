@@ -60,7 +60,7 @@ final class TabBarDemoUITests: XCTestCase {
         assertLastTabBarButtonTitle("More", in: tabBar)
         let refreshedMoreButton = lastTabBarButton(in: tabBar)
         XCTAssertTrue(refreshedMoreButton.exists)
-        refreshedMoreButton.tap()
+        refreshedMoreButton.press(forDuration: Timing.menuPress)
 
         let overflowItem = waitForMoreMenuItem(named: "Extra 3", in: tabBar, timeout: Timing.short)
         XCTAssertTrue(overflowItem.exists)
@@ -104,8 +104,56 @@ final class TabBarDemoUITests: XCTestCase {
         assertLastTabBarButtonTitle("More", in: tabBar)
         let refreshedMoreButton = lastTabBarButton(in: tabBar)
         XCTAssertTrue(refreshedMoreButton.exists)
-        refreshedMoreButton.tap()
+        refreshedMoreButton.press(forDuration: Timing.menuPress)
         XCTAssertTrue(waitForMoreMenuItem(named: "Extra 3", in: tabBar, timeout: Timing.short).exists)
+    }
+
+    @MainActor
+    func testNativeMoreRowAfterDelegateReplacement() {
+        assertNativeMoreRowAfterDelegateReplacement(usesViewControllers: false)
+    }
+
+    @MainActor
+    func testNativeMoreRowAfterDelegateReplacementInViewControllerMode() {
+        assertNativeMoreRowAfterDelegateReplacement(usesViewControllers: true)
+    }
+
+    @MainActor
+    private func assertNativeMoreRowAfterDelegateReplacement(usesViewControllers: Bool) {
+        app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-replace-more-delegate"]
+        app.launch()
+        defer { app.terminate() }
+        if usesViewControllers { ensureViewControllerMode() } else { ensureUITabMode() }
+        addTabs(count: 3)
+
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.waitForExistence(timeout: Timing.ui))
+        lastTabBarButton(in: tabBar).tap()
+        let forwarded = app.staticTexts["navigation-status"]
+        let listShown = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "More delegate replaced", "Forwarded:"),
+            object: forwarded
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [listShown], timeout: 10), .completed)
+        let row = app.tables.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Extra 2")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: Timing.ui))
+        row.tap()
+
+        let selected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "1: Selected Extra 2 (More)"),
+            object: app.staticTexts["selection-status"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 10), .completed)
+        assertContentTitle("Extra 2")
+        XCTAssertEqual(forwarded.label, "Forwarded: Extra 2")
+        lastTabBarButton(in: tabBar).tap()
+        let reselected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "2: Reselected Extra 2 (More)"),
+            object: app.staticTexts["selection-status"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [reselected], timeout: 10), .completed)
     }
 
     @MainActor

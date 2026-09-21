@@ -46,6 +46,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private weak var tabBarController: UITabBarController?
     private var tabBarControllerDelegateProxy: TabBarMenuTabBarControllerDelegateProxy?
     private var moreNavigationDelegateProxy: TabBarMenuMoreNavigationDelegateProxy?
+    private var moreNavigationDelegateObservation: NSKeyValueObservation?
     private var pendingMoreSelection: (viewController: UIViewController, previous: TabBarContent?)?
     private var menuHostButton: UIButton?
     private var lastGestureSyncEntries: [GestureSyncEntry] = []
@@ -59,6 +60,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
 
     func attach(to tabBarController: UITabBarController) {
         if self.tabBarController !== tabBarController {
+            moreNavigationDelegateObservation = nil
             if let previousController = self.tabBarController {
                 let tabBar = previousController.tabBar
                 tabBar.tabBarMenuLayoutHandler = nil
@@ -77,6 +79,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     func detach() {
+        moreNavigationDelegateObservation = nil
         if let tabBar = tabBarController?.tabBar {
             tabBar.tabBarMenuLayoutHandler = nil
             removeMenuGestures(from: tabBar)
@@ -344,11 +347,25 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         let navigationProxy = moreNavigationDelegateProxy ?? TabBarMenuMoreNavigationDelegateProxy()
         navigationProxy.coordinator = self
         let navigationController = tabBarController.moreNavigationController
+        moreNavigationDelegateProxy = navigationProxy
         if navigationController.delegate !== navigationProxy {
             navigationProxy.originalDelegate = navigationController.delegate as? (NSObject & UINavigationControllerDelegate)
             navigationController.delegate = navigationProxy
         }
-        moreNavigationDelegateProxy = navigationProxy
+        observeMoreNavigationDelegate(on: navigationController)
+    }
+
+    private func observeMoreNavigationDelegate(on navigationController: UINavigationController) {
+        guard moreNavigationDelegateObservation == nil else { return }
+        // More row selection bypasses the tab bar, so reconnect at delegate assignment.
+        moreNavigationDelegateObservation = navigationController.observe(\.delegate) { [weak self] navigationController, _ in
+            MainActor.assumeIsolated {
+                guard let self, let tabBarController = self.tabBarController,
+                      tabBarController.moreNavigationController === navigationController,
+                      navigationController.delegate !== self.moreNavigationDelegateProxy else { return }
+                self.installDelegateProxy(on: tabBarController)
+            }
+        }
     }
 
     private func uninstallDelegateProxy(from tabBarController: UITabBarController) {

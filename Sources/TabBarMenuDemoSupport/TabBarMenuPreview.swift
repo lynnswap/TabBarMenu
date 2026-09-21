@@ -26,6 +26,7 @@ private enum PreviewTabDefaults {
 
 private enum UITestConfiguration {
     static let isEnabled = ProcessInfo.processInfo.arguments.contains("-ui-testing")
+    static let replacesMoreDelegate = ProcessInfo.processInfo.arguments.contains("-replace-more-delegate")
 }
 
 @MainActor
@@ -45,6 +46,7 @@ private final class TabBarMenuPreviewViewModel {
         }
     }
     var selectionStatus = "Select a tab"
+    var navigationStatus = "Waiting for More"
     private var selectionCount = 0
 
     func recordSelection(title: String, isReselection: Bool, isOverflow: Bool) {
@@ -136,6 +138,22 @@ public enum TabBarMenuPreviewMode: String {
 private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDelegate, TabBarMenuPreviewContent {
     weak var viewModel: TabBarMenuPreviewViewModel?
     fileprivate var hasAppliedContent = false
+    private let replacementMoreDelegate = PreviewMoreNavigationDelegate()
+    private let initialMoreDelegate = PreviewMoreNavigationDelegate()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        if UITestConfiguration.replacesMoreDelegate {
+            initialMoreDelegate.willShow = { [weak self] navigation, shown in
+                guard let self, shown === navigation.viewControllers.first else { return }
+                navigation.delegate = self.replacementMoreDelegate
+                self.viewModel?.navigationStatus = "More delegate replaced"
+            }
+            replacementMoreDelegate.didShow = { [weak self] shown in
+                self?.viewModel?.navigationStatus = "Forwarded: \(shown.title ?? "More")"
+            }
+        }
+    }
 
     override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
         super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
@@ -152,6 +170,10 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
 
     func applyPreviewTabs(_ previewTabs: [PreviewTab], showsSearchTab: Bool) {
         preconditionFailure("Override in subclass.")
+    }
+
+    fileprivate func prepareNativeMoreDelegateTest() {
+        moreNavigationController.delegate = initialMoreDelegate
     }
 
     func tabBarController(
@@ -259,6 +281,10 @@ private final class TabBarMenuPreviewUITabController: TabBarMenuPreviewBaseContr
                 self?.viewModel?.deleteTab(tab)
             }
         case .more(let tabs, let selectedTab):
+            if UITestConfiguration.replacesMoreDelegate, interaction == .tap {
+                if selectedTab == nil { prepareNativeMoreDelegateTest() }
+                return nil
+            }
             if interaction == .tap, selectedTab != nil { return nil }
             menu = UIMenu(children: tabs.map { tabBarController.selectionAction(for: $0) })
         case .viewController, .moreViewControllers:
@@ -294,6 +320,10 @@ private final class TabBarMenuPreviewViewControllerController: TabBarMenuPreview
                 self?.viewModel?.deleteTab(controller)
             }
         case .moreViewControllers(let controllers, let selected):
+            if UITestConfiguration.replacesMoreDelegate, interaction == .tap {
+                if selected == nil { prepareNativeMoreDelegateTest() }
+                return nil
+            }
             if interaction == .tap, selected != nil { return nil }
             menu = UIMenu(children: controllers.map { tabBarController.selectionAction(for: $0) })
         case .tab, .more:
@@ -323,6 +353,20 @@ private final class TabBarMenuPreviewContainerController: UIViewController {
         view.addSubview(controller.view)
         controller.didMove(toParent: self)
         currentController = controller
+    }
+}
+
+@MainActor
+private final class PreviewMoreNavigationDelegate: NSObject, UINavigationControllerDelegate {
+    var willShow: ((UINavigationController, UIViewController) -> Void)?
+    var didShow: ((UIViewController) -> Void)?
+
+    func navigationController(_ navigation: UINavigationController, willShow controller: UIViewController, animated: Bool) {
+        willShow?(navigation, controller)
+    }
+
+    func navigationController(_ navigation: UINavigationController, didShow controller: UIViewController, animated: Bool) {
+        didShow?(controller)
     }
 }
 
@@ -372,6 +416,10 @@ public struct TabBarMenuPreviewScreen: View {
         TabBarMenuPreviewRepresentable(mode: mode, viewModel: viewModel)
             .ignoresSafeArea()
             .safeAreaInset(edge: .top) {
+                if UITestConfiguration.replacesMoreDelegate {
+                    Text(viewModel.navigationStatus)
+                        .accessibilityIdentifier("navigation-status")
+                }
                 Text(viewModel.selectionStatus)
                     .font(.caption)
                     .padding(8)

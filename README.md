@@ -121,6 +121,9 @@ completed-selection notification precedes the forwarded UIKit `didSelect` /
 changes there do not discard the completed event. A UIKit delegate
 assigned after `menuDelegate` is picked up at the next native tap selection or
 menu-action execution, without waiting for a layout pass.
+Replacing or clearing `moreNavigationController.delegate` is observed immediately,
+so selecting a row in the More list continues to report completion. Detaching
+`menuDelegate` restores the most recently assigned navigation delegate.
 
 ## Classic view-controller tab bars
 
