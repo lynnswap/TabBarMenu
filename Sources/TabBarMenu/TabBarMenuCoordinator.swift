@@ -154,6 +154,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
               let item = tabBarController.tabBarMenuItem(at: index) else { return true }
         pendingSelection = nil
         let presentation = delegate.tabBarController(tabBarController, prepareFor: interaction, on: item)
+        guard self.tabBarController === tabBarController else { return true }
         if interaction == .longPress {
             cancelTabBarTracking(for: sourceView)
         }
@@ -173,6 +174,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return false
         }
         guard interaction == .tap else { return false }
+        installDelegateProxy(on: tabBarController)
         if item.isMore, let content = item.content {
             selectFromUser(content)
             return false
@@ -250,6 +252,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     func selectFromUser(_ content: TabBarContent) {
         guard let tabBarController, tabBarController.tabBarMenuOwns(content),
               delegate != nil else { return }
+        installDelegateProxy(on: tabBarController)
         let previous = tabBarController.tabBarMenuSelectedContent
         switch content {
         case .tab(let tab):

@@ -115,7 +115,12 @@ or request a menu. It returns whether the content selection succeeded.
 Your existing `UITabBarControllerDelegate` remains available for selection
 permission and other UIKit behavior. Use `TabBarMenuDelegate.didSelect` as your
 application's common selection handler for ordinary tabs, More reselection, and
-selection actions. Native UIKit callbacks continue to be forwarded.
+selection actions. Native UIKit callbacks continue to be forwarded. The package's
+completed-selection notification precedes the forwarded UIKit `didSelect` /
+`didSelectTab` or More-navigation `didShow` callback, so synchronous tab or selection
+changes there do not discard the completed event. A UIKit delegate
+assigned after `menuDelegate` is picked up at the next native tap selection or
+menu-action execution, without waiting for a layout pass.
 
 ## Classic view-controller tab bars
 

@@ -99,6 +99,8 @@ public protocol TabBarMenuDelegate: AnyObject {
     /// Compare identities with `previousTab` to recognize a reselection. `isOverflow` describes
     /// whether the selected tab is in More at selection time, not the origin of the interaction.
     /// Programmatic `selectTabContent` calls are silent; use `selectionAction(for:)` in menus.
+    /// This notification precedes the forwarded UIKit `didSelect` / `didSelectTab` or More-navigation
+    /// `didShow` callback, so synchronous changes there cannot discard the completed selection.
     func tabBarController(
         _ tabBarController: UITabBarController,
         didSelect selectedTab: UITab,
