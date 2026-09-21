@@ -315,3 +315,57 @@ func moreNavigationDelegateLifetime() throws {
     context.controller.menuDelegate = nil
     #expect(navigation.delegate === navigationDelegate)
 }
+
+@Test("Native More navigation resolves a borrowed root to its owning tab", arguments: [false, true])
+@MainActor
+func nativeMoreNavigationWithNavigationTabs(usesUITab: Bool) async throws {
+    let owners = (0..<6).map { index in
+        UINavigationController(rootViewController: makeContentViewController(title: "Root \(index)", itemTitle: "Tab \(index)"))
+    }
+    let tabs = owners.enumerated().map { index, owner in
+        UITab(title: "Tab \(index)", image: nil, identifier: "tab.\(index)") { _ in owner }
+    }
+    let controller = UITabBarController()
+    if usesUITab {
+        controller.tabs = tabs
+    } else {
+        controller.setViewControllers(owners, animated: false)
+    }
+    let host = WindowHost(rootViewController: controller)
+    defer { withExtendedLifetime(host) {} }
+    let delegate = InteractionDelegate()
+    controller.menuDelegate = delegate
+    let navigation = controller.moreNavigationController
+    navigation.loadViewIfNeeded()
+    let list = try #require(moreListController(in: navigation))
+    let target = try #require(owners[5].viewControllers.first)
+    let expected: TabBarContent = usesUITab ? .tab(tabs[5]) : .viewController(owners[5])
+    #expect(controller.tabBarMenuContent(for: target) == expected)
+    let proxy = try #require(navigation.delegate)
+    proxy.navigationController?(navigation, willShow: target, animated: false)
+    navigation.delegate = nil
+    navigation.setViewControllers([list, target], animated: false)
+    #expect(ObjectiveCInterop.performVoidSelector(
+        UITabBarControllerRuntimeMethodNames.setSelectedViewControllerAndNotify,
+        on: controller, with: navigation
+    ))
+    #expect(ObjectiveCInterop.performVoidSelector(
+        UITabBarControllerRuntimeMethodNames.setSelectedTabBarItem,
+        on: controller, with: try #require(moreTabBarItem(in: controller))
+    ))
+    setDisplayedViewController(owners[5], in: navigation)
+    navigation.delegate = proxy
+    #expect(controller.tabBarMenuSelectedContent == expected)
+    proxy.navigationController?(navigation, didShow: target, animated: false)
+    if usesUITab {
+        #expect(delegate.selections.count == 1)
+        #expect(delegate.selections.first?.0 === tabs[5])
+        #expect(delegate.selections.first?.1 == nil)
+        #expect(delegate.selections.first?.2 == true)
+    } else {
+        #expect(delegate.viewControllerSelections.count == 1)
+        #expect(delegate.viewControllerSelections.first?.0 === owners[5])
+        #expect(delegate.viewControllerSelections.first?.1 == nil)
+        #expect(delegate.viewControllerSelections.first?.2 == true)
+    }
+}

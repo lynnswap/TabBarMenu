@@ -69,8 +69,8 @@ extension UITabBarController {
                 UIViewControllerRuntimeMethodNames.resolvedTab, on: viewController
             ) as? UITab
             if let resolved, tabs.contains(where: { $0 === resolved }) { return .tab(resolved) }
-        } else if viewControllers?.contains(where: { $0 === viewController }) == true {
-            return .viewController(viewController)
+        } else if let owner = owningTabViewController(for: viewController) {
+            return .viewController(owner)
         }
         return nil
     }
@@ -110,9 +110,14 @@ extension UITabBarController {
         let candidate = displayed === moreNavigationController
             ? moreNavigationController.topViewController : displayed
         guard let candidate, candidate !== moreListControllerObject() else { return nil }
-        return (viewControllers ?? []).first { owner in
-            owner === candidate || containsLegacyMoreTarget(owner, descendant: candidate)
-        }
+        return owningTabViewController(for: candidate)
+    }
+
+    private func owningTabViewController(for displayedViewController: UIViewController) -> UIViewController? {
+        let owners = tabs.isEmpty
+            ? (viewControllers ?? [])
+            : tabs.compactMap { resolvedMoreSelectionViewController(for: $0) }
+        return owners.first { containsLegacyMoreTarget($0, descendant: displayedViewController) }
     }
 
     nonisolated private var usesUITabDisplayedViewControllersOverflowPath: Bool {
@@ -813,10 +818,8 @@ extension UITabBarController {
 
     private func matchingTab(for viewController: UIViewController) -> UITab? {
         tabs.first { tab in
-            if let tabViewController = tab.viewController {
-                return tabViewController === viewController
-            }
-            return tab.resolvedMoreSelectionViewController === viewController
+            guard let owner = resolvedMoreSelectionViewController(for: tab) else { return false }
+            return containsLegacyMoreTarget(owner, descendant: viewController)
         }
     }
 
