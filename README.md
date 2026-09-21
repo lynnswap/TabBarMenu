@@ -6,8 +6,8 @@ common callback for tab selections and reselections.
 
 ![TabBarMenu preview](Docs/images/anchor-above.webp)
 
-> TabBarMenu relies on undocumented UIKit APIs and runtime behavior. Evaluate
-> that constraint before using it in an App Store-bound project.
+> [!WARNING]
+> This package relies on undocumented APIs and runtime behavior, so extra care is needed before using it in App Store-bound projects.
 
 ## Installation
 
