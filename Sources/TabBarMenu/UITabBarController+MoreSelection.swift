@@ -14,8 +14,9 @@ public extension UITabBarController {
             return false
         }
 
-        tabBarMenuCoordinator?.beginProgrammaticSelection()
-        defer { tabBarMenuCoordinator?.endProgrammaticSelection() }
+        let coordinator = tabBarMenuCoordinator
+        coordinator?.beginProgrammaticSelection()
+        defer { coordinator?.endProgrammaticSelection() }
         if isOverflowItemIndex(index, totalCount: tabs.count) {
             return selectOverflowTabContent(
                 resolvedViewController,
@@ -41,8 +42,9 @@ public extension UITabBarController {
             ? nil
             : matchingTab(for: viewController)
 
-        tabBarMenuCoordinator?.beginProgrammaticSelection()
-        defer { tabBarMenuCoordinator?.endProgrammaticSelection() }
+        let coordinator = tabBarMenuCoordinator
+        coordinator?.beginProgrammaticSelection()
+        defer { coordinator?.endProgrammaticSelection() }
         if isOverflowItemIndex(index, totalCount: viewControllers.count) {
             return selectOverflowTabContent(
                 viewController,
