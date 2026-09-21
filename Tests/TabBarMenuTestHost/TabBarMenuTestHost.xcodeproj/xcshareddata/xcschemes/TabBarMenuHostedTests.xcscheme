@@ -1,12 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2630"
+   LastUpgradeVersion = "1430"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
-      buildArchitectures = "Automatic">
+      runPostActionsOnFailure = "NO">
       <BuildActionEntries>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "523B1EE6FB7D483A718C61E9"
+               BuildableName = "TabBarMenuHostedTests.xctest"
+               BlueprintName = "TabBarMenuHostedTests"
+               ReferencedContainer = "container:TabBarMenuTestHost.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
          <BuildActionEntry
             buildForTesting = "YES"
             buildForRunning = "YES"
@@ -15,10 +29,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A2C140F5326842D78ABC9988"
-               BuildableName = "TabBarDemo.app"
-               BlueprintName = "TabBarDemo"
-               ReferencedContainer = "container:TabBarDemo.xcodeproj">
+               BlueprintIdentifier = "98511FA7D2C9E4EE6B6240A9"
+               BuildableName = "TabBarMenuTestHost.app"
+               BlueprintName = "TabBarMenuTestHost"
+               ReferencedContainer = "container:TabBarMenuTestHost.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -28,19 +42,31 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
-      shouldAutocreateTestPlan = "YES">
+      onlyGenerateCoverageForSpecifiedTargets = "NO">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "98511FA7D2C9E4EE6B6240A9"
+            BuildableName = "TabBarMenuTestHost.app"
+            BlueprintName = "TabBarMenuTestHost"
+            ReferencedContainer = "container:TabBarMenuTestHost.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
       <Testables>
          <TestableReference
-            skipped = "NO">
+            skipped = "NO"
+            parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "1A8A332F80924916B860307B"
-               BuildableName = "TabBarDemoUITests.xctest"
-               BlueprintName = "TabBarDemoUITests"
-               ReferencedContainer = "container:TabBarDemo.xcodeproj">
+               BlueprintIdentifier = "523B1EE6FB7D483A718C61E9"
+               BuildableName = "TabBarMenuHostedTests.xctest"
+               BlueprintName = "TabBarMenuHostedTests"
+               ReferencedContainer = "container:TabBarMenuTestHost.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -56,10 +82,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "A2C140F5326842D78ABC9988"
-            BuildableName = "TabBarDemo.app"
-            BlueprintName = "TabBarDemo"
-            ReferencedContainer = "container:TabBarDemo.xcodeproj">
+            BlueprintIdentifier = "98511FA7D2C9E4EE6B6240A9"
+            BuildableName = "TabBarMenuTestHost.app"
+            BlueprintName = "TabBarMenuTestHost"
+            ReferencedContainer = "container:TabBarMenuTestHost.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -73,10 +99,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "A2C140F5326842D78ABC9988"
-            BuildableName = "TabBarDemo.app"
-            BlueprintName = "TabBarDemo"
-            ReferencedContainer = "container:TabBarDemo.xcodeproj">
+            BlueprintIdentifier = "98511FA7D2C9E4EE6B6240A9"
+            BuildableName = "TabBarMenuTestHost.app"
+            BlueprintName = "TabBarMenuTestHost"
+            ReferencedContainer = "container:TabBarMenuTestHost.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

@@ -12,8 +12,6 @@ func tabBarMenuAnchorFrame(
         anchorPoint = CGPoint(x: tabFrame.midX, y: tabFrame.minY - offset)
     case .custom(let point):
         anchorPoint = point
-    case .manual:
-        anchorPoint = nil
     }
 
     guard let anchorPoint else {
@@ -37,13 +35,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         let minimumPressDuration: TimeInterval
     }
 
-    private struct MoreMenuPresentation {
-        let menu: UIMenu
-        let sourceView: UIView
-        let context: PresentationContext
-        let moreTabIndex: Int
-    }
-
     weak var delegate: TabBarMenuDelegate?
     var configuration: TabBarMenuConfiguration = .init() {
         didSet {
@@ -54,8 +45,14 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
 
     private weak var tabBarController: UITabBarController?
     private var tabBarControllerDelegateProxy: TabBarMenuTabBarControllerDelegateProxy?
+    private var moreNavigationDelegateProxy: TabBarMenuMoreNavigationDelegateProxy?
+    private var moreNavigationDelegateObservation: NSKeyValueObservation?
+    private var pendingMoreSelection: (viewController: UIViewController, previous: TabBarContent?)?
     private var menuHostButton: UIButton?
     private var lastGestureSyncEntries: [GestureSyncEntry] = []
+    private var programmaticSelectionDepth = 0
+    private var deferredUIKitCompletions: [@MainActor () -> Void]?
+    private var pendingSelection: (content: TabBarContent?, previous: TabBarContent?)?
 
     @MainActor deinit {
         detach()
@@ -63,6 +60,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
 
     func attach(to tabBarController: UITabBarController) {
         if self.tabBarController !== tabBarController {
+            moreNavigationDelegateObservation = nil
             if let previousController = self.tabBarController {
                 let tabBar = previousController.tabBar
                 tabBar.tabBarMenuLayoutHandler = nil
@@ -81,6 +79,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     func detach() {
+        moreNavigationDelegateObservation = nil
         if let tabBar = tabBarController?.tabBar {
             tabBar.tabBarMenuLayoutHandler = nil
             removeMenuGestures(from: tabBar)
@@ -94,6 +93,8 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         menuHostButton?.removeFromSuperview()
         menuHostButton = nil
         tabBarController = nil
+        pendingSelection = nil
+        pendingMoreSelection = nil
     }
 
     func refreshInteractions() {
@@ -134,64 +135,196 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             self.refreshInteractions()
         }
         tabBar.tabBarMenuSelectionHandler = { [weak self, weak tabBarController] _, item in
-            guard let tabBarController else { return true }
-            guard let self else {
-                if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
-                    _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
-                }
-                return true
-            }
-            let requestCore = self.makeRequestCore()
-            guard let request = self.moreMenuRequest(using: requestCore) else {
-                if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
-                    _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
-                }
-                return true
-            }
-            let matchedMoreItem = request.matches(item: item, in: tabBarController)
-            // Return false to cancel system selection when we presented a More menu.
-            let didPresentMenu = matchedMoreItem
-                && self.handleMoreSelection(item, in: tabBarController, request: request)
-            if didPresentMenu {
-                return false
-            }
-            self.dismissTransientOverflowIfNeeded(
-                in: tabBarController,
-                allowingDefaultMoreSelection: matchedMoreItem
-            )
-            return true
+            guard let self, let tabBarController,
+                  let index = tabBarController.tabBar.items?.firstIndex(where: { $0 === item }),
+                  let sourceView = self.tabBarIndexedViews(in: tabBarController.tabBar)
+                    .first(where: { $0.0 == index })?.1 else { return true }
+            return self.handleInteraction(.tap, at: index, sourceView: sourceView)
         }
         tabBar.tabBarMenuControlSelectionHandler = { [weak self, weak tabBarController] tabBar, control in
-            guard let tabBarController else { return true }
-            guard let self else {
+            guard let self, let tabBarController,
+                  let index = self.resolvedTabIndex(for: control, in: tabBarController) else {
                 tabBar.tabBarMenuControlSelectionDidHandle = false
-                if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
-                    _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
-                }
                 return true
             }
-            let requestCore = self.makeRequestCore()
-            guard let request = self.moreMenuRequest(using: requestCore) else {
-                tabBar.tabBarMenuControlSelectionDidHandle = false
-                if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
-                    _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
-                }
-                return true
-            }
-            let result = self.handleMoreSelection(control: control, in: tabBarController, request: request)
-            tabBar.tabBarMenuControlSelectionDidHandle = result.didHandle
-            if result.didHandle && result.shouldCallDefault {
-                self.dismissTransientOverflowIfNeeded(
-                    in: tabBarController,
-                    allowingDefaultMoreSelection: true
+            tabBar.tabBarMenuControlSelectionDidHandle = true
+            return self.handleInteraction(.tap, at: index, sourceView: control)
+        }
+    }
+
+    /// Returns whether UIKit should continue processing the original tap.
+    func handleInteraction(_ interaction: TabBarInteraction, at index: Int, sourceView: UIView) -> Bool {
+        guard let tabBarController, let delegate,
+              let item = tabBarController.tabBarMenuItem(at: index) else { return true }
+        pendingSelection = nil
+        let presentation = delegate.tabBarController(tabBarController, prepareFor: interaction, on: item)
+        guard self.tabBarController === tabBarController else { return true }
+        if interaction == .longPress {
+            cancelTabBarTracking(for: sourceView)
+        }
+        if let presentation {
+            if let context = makePresentationContext(for: sourceView, in: tabBarController) {
+                let hostButton = makeMenuHostButton(in: context.containerView)
+                hostButton.preferredMenuElementOrder = presentation.preferredMenuElementOrder
+                presentMenu(
+                    presentation.menu,
+                    tabFrame: context.tabFrame,
+                    in: context.containerView,
+                    placement: presentation.anchorPlacement,
+                    hostButton: hostButton,
+                    sourceView: sourceView
                 )
-            } else if !result.didHandle {
-                self.dismissTransientOverflowIfNeeded(
-                    in: tabBarController,
-                    allowingDefaultMoreSelection: false
-                )
             }
-            return result.shouldCallDefault
+            return false
+        }
+        guard interaction == .tap else { return false }
+        installDelegateProxy(on: tabBarController)
+        if item.isMore, let content = item.content {
+            selectFromUser(content)
+            return false
+        }
+        pendingSelection = (item.content, tabBarController.tabBarMenuSelectedContent)
+        if tabBarController.tabBarMenuHasViewControllerTransientOverflowContent {
+            _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
+        }
+        return true
+    }
+
+    var isSelectingProgrammatically: Bool { programmaticSelectionDepth > 0 }
+
+    func beginProgrammaticSelection() {
+        programmaticSelectionDepth += 1
+        pendingSelection = nil
+        pendingMoreSelection = nil
+    }
+
+    func endProgrammaticSelection() {
+        programmaticSelectionDepth -= 1
+    }
+
+    func willSelectNativeContent(_ content: TabBarContent) {
+        guard programmaticSelectionDepth == 0,
+              let tabBarController,
+              tabBarController.tabBarMenuOwns(content) else { return }
+        if pendingSelection?.content != content {
+            pendingSelection = (content, tabBarController.tabBarMenuSelectedContent)
+        }
+    }
+
+    func cancelNativeSelection() {
+        pendingSelection = nil
+    }
+
+    func didSelectNativeContent(_ content: TabBarContent) {
+        guard programmaticSelectionDepth == 0,
+              let pendingSelection, let selected = pendingSelection.content else { return }
+        if selected != content {
+            // WORKAROUND: iOS 18.6 reports a detached UITab after replacing tabs with the same identifiers.
+            // Accept that completion only when the requested, current tab actually owns selection.
+            guard case .tab(let requestedTab) = selected,
+                  case .tab(let reportedTab) = content,
+                  requestedTab.identifier == reportedTab.identifier,
+                  tabBarController?.tabBarMenuSelectedContent == selected else { return }
+        }
+        self.pendingSelection = nil
+        notifySelection(selected, previous: pendingSelection.previous)
+    }
+
+    func willShowMoreContent(_ viewController: UIViewController, in navigationController: UINavigationController) {
+        pendingMoreSelection = nil
+        guard programmaticSelectionDepth == 0, let tabBarController,
+              !tabBarController.tabBarMenuIsPresentingTransientOverflowContent else { return }
+        if tabBarController.tabBarMenuIsMoreList(viewController) {
+            if pendingSelection?.content == nil { pendingSelection = nil }
+            return
+        }
+        let previous: TabBarContent?
+        if let pendingSelection {
+            previous = pendingSelection.previous
+        } else {
+            let from = navigationController.transitionCoordinator?.viewController(forKey: .from)
+                ?? navigationController.visibleViewController
+            // Only a row selection from the More list is a new tab selection.
+            // Navigating back within that tab's content must remain a navigation event.
+            guard tabBarController.tabBarMenuIsMoreList(from) else { return }
+            previous = nil
+        }
+        pendingMoreSelection = (viewController, previous)
+    }
+
+    func didShowMoreContent(_ viewController: UIViewController) {
+        guard let pending = pendingMoreSelection else { return }
+        pendingMoreSelection = nil
+        guard pending.viewController === viewController,
+              let controller = tabBarController,
+              controller.moreNavigationController.topViewController === viewController,
+              let content = controller.tabBarMenuSelectedContent,
+              controller.tabBarMenuIsOverflow(content) else { return }
+        // WORKAROUND: On iOS 18.6, 26.5, and 27.2, UIKit borrows a navigation tab's root
+        // before willShow. Resolve its owner from the completed selection, not containment.
+        notifySelection(content, previous: pending.previous)
+    }
+
+    func forwardUIKitCompletion(_ completion: @escaping @MainActor () -> Void) {
+        if deferredUIKitCompletions != nil {
+            deferredUIKitCompletions?.append(completion)
+        } else {
+            completion()
+        }
+    }
+
+    func selectFromUser(_ content: TabBarContent) {
+        guard let tabBarController, tabBarController.tabBarMenuOwns(content),
+              delegate != nil else { return }
+        installDelegateProxy(on: tabBarController)
+        let previous = tabBarController.tabBarMenuSelectedContent
+        switch content {
+        case .tab(let tab):
+            if #available(iOS 18.4, *), !tab.isEnabled { return }
+        case .viewController(let controller):
+            guard controller.tabBarItem.isEnabled else { return }
+        }
+        guard tabBarControllerDelegateProxy?.allowsSelection(of: content, in: tabBarController) ?? true else { return }
+        // Menu actions use programmatic helpers, whose native completion callbacks can
+        // reconfigure the tabs. Deliver the user selection before forwarding those callbacks.
+        let startsCompletionBatch = deferredUIKitCompletions == nil
+        if startsCompletionBatch { deferredUIKitCompletions = [] }
+        defer {
+            if startsCompletionBatch {
+                let completions = deferredUIKitCompletions ?? []
+                deferredUIKitCompletions = nil
+                for completion in completions { completion() }
+            }
+        }
+        // Reselection is a notification, not a reconstruction of More's navigation stack.
+        if previous != content {
+            let didSelect: Bool
+            switch content {
+            case .tab(let tab): didSelect = tabBarController.selectTabContent(tab)
+            case .viewController(let controller): didSelect = tabBarController.selectTabContent(controller)
+            }
+            guard didSelect else { return }
+        }
+        notifySelection(content, previous: previous)
+    }
+
+    private func notifySelection(_ content: TabBarContent, previous: TabBarContent?) {
+        guard let tabBarController, tabBarController.tabBarMenuOwns(content) else { return }
+        if pendingSelection?.content == nil || pendingSelection?.content == content {
+            pendingSelection = nil
+        }
+        pendingMoreSelection = nil
+        let isOverflow = tabBarController.tabBarMenuIsOverflow(content)
+        switch content {
+        case .tab(let tab):
+            let previousTab: UITab? = if case .tab(let tab) = previous { tab } else { nil }
+            delegate?.tabBarController(tabBarController, didSelect: tab, previousTab: previousTab, isOverflow: isOverflow)
+        case .viewController(let controller):
+            let previousController: UIViewController? = if case .viewController(let controller) = previous { controller } else { nil }
+            delegate?.tabBarController(
+                tabBarController, didSelect: controller,
+                previousViewController: previousController, isOverflow: isOverflow
+            )
         }
     }
 
@@ -203,6 +336,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private func installDelegateProxy(on tabBarController: UITabBarController) {
         let proxy = tabBarControllerDelegateProxy ?? TabBarMenuTabBarControllerDelegateProxy()
         proxy.tabBarController = tabBarController
+        proxy.coordinator = self
 
         if tabBarController.delegate !== proxy {
             proxy.originalDelegate = tabBarController.delegate as? (NSObject & UITabBarControllerDelegate)
@@ -210,9 +344,38 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
 
         tabBarControllerDelegateProxy = proxy
+        let navigationProxy = moreNavigationDelegateProxy ?? TabBarMenuMoreNavigationDelegateProxy()
+        navigationProxy.coordinator = self
+        let navigationController = tabBarController.moreNavigationController
+        moreNavigationDelegateProxy = navigationProxy
+        if navigationController.delegate !== navigationProxy {
+            navigationProxy.originalDelegate = navigationController.delegate as? (NSObject & UINavigationControllerDelegate)
+            navigationController.delegate = navigationProxy
+        }
+        observeMoreNavigationDelegate(on: navigationController)
+    }
+
+    private func observeMoreNavigationDelegate(on navigationController: UINavigationController) {
+        guard moreNavigationDelegateObservation == nil else { return }
+        // More row selection bypasses the tab bar, so reconnect at delegate assignment.
+        moreNavigationDelegateObservation = navigationController.observe(\.delegate) { [weak self] navigationController, _ in
+            MainActor.assumeIsolated {
+                guard let self, let tabBarController = self.tabBarController,
+                      tabBarController.moreNavigationController === navigationController,
+                      navigationController.delegate !== self.moreNavigationDelegateProxy else { return }
+                self.installDelegateProxy(on: tabBarController)
+            }
+        }
     }
 
     private func uninstallDelegateProxy(from tabBarController: UITabBarController) {
+        if let proxy = moreNavigationDelegateProxy {
+            let controller = tabBarController.moreNavigationController
+            if controller.delegate === proxy { controller.delegate = proxy.originalDelegate }
+            proxy.originalDelegate = nil
+            proxy.coordinator = nil
+        }
+        pendingMoreSelection = nil
         guard let proxy = tabBarControllerDelegateProxy else {
             return
         }
@@ -222,6 +385,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
 
         proxy.tabBarController = nil
+        proxy.coordinator = nil
         proxy.originalDelegate = nil
         if self.tabBarController !== tabBarController {
             tabBarControllerDelegateProxy = nil
@@ -257,7 +421,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             GestureSyncEntry(
                 viewID: ObjectIdentifier(view),
                 tabIndex: index,
-                minimumPressDuration: longPressDuration(for: index, in: tabBarController)
+                minimumPressDuration: configuration.minimumPressDuration
             )
         }
 
@@ -319,94 +483,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         }
         let tabFrame = sourceView.convert(sourceView.bounds, to: containerView)
         return PresentationContext(containerView: containerView, tabFrame: tabFrame)
-    }
-
-    private func makeMenuPlan(
-        for tabIndex: Int,
-        in tabBarController: UITabBarController,
-        context: PresentationContext
-    ) -> MenuPlan? {
-        guard let delegate else {
-            return nil
-        }
-        let requestCore = makeRequestCore()
-        if let request = moreMenuRequest(using: requestCore),
-           let plan = makeMoreMenuPlan(
-            for: tabIndex,
-            in: tabBarController,
-            context: context,
-            request: request,
-            delegate: delegate
-           ) {
-            return plan
-        }
-        guard let request = itemMenuRequest(using: requestCore) else {
-            return nil
-        }
-        return makeItemMenuPlan(
-            for: tabIndex,
-            in: tabBarController,
-            context: context,
-            request: request,
-            delegate: delegate
-        )
-    }
-
-    private func makeMoreMenuPlan(
-        for tabIndex: Int,
-        in tabBarController: UITabBarController,
-        context: PresentationContext,
-        request: MoreMenuRequest,
-        delegate: TabBarMenuDelegate
-    ) -> MenuPlan? {
-        guard request.isMoreTabIndex(tabIndex, in: tabBarController),
-              let menu = request.menu(in: tabBarController, delegate: delegate) else {
-            return nil
-        }
-        let hostButton = makeMenuHostButton(in: context.containerView)
-        let placement = request.menuPresentationPlacement(
-            in: tabBarController,
-            presentationContext: context,
-            hostButton: hostButton,
-            delegate: delegate
-        )
-        return MenuPlan(menu: menu, placement: placement, hostButton: hostButton)
-    }
-
-    private func makeItemMenuPlan(
-        for tabIndex: Int,
-        in tabBarController: UITabBarController,
-        context: PresentationContext,
-        request: ItemMenuRequest,
-        delegate: TabBarMenuDelegate
-    ) -> MenuPlan? {
-        guard let menu = request.menu(
-            forItemAt: tabIndex,
-            in: tabBarController,
-            delegate: delegate
-        ) else {
-            return nil
-        }
-        let hostButton = makeMenuHostButton(in: context.containerView)
-        let placement = request.menuPresentationPlacement(
-            forItemAt: tabIndex,
-            in: tabBarController,
-            presentationContext: context,
-            hostButton: hostButton,
-            delegate: delegate
-        )
-        return MenuPlan(menu: menu, placement: placement, hostButton: hostButton)
-    }
-
-    private func presentPlannedMenu(_ plan: MenuPlan, context: PresentationContext, sourceView: UIView) {
-        presentMenu(
-            plan.menu,
-            tabFrame: context.tabFrame,
-            in: context.containerView,
-            placement: plan.placement,
-            hostButton: plan.hostButton,
-            sourceView: sourceView
-        )
     }
 
     private func presentMenu(from button: UIButton) {
@@ -516,177 +592,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return button
     }
 
-    // MARK: - Request helpers
-
-    private func makeRequestCore() -> TabBarMenuRequestCore {
-        TabBarMenuRequestCore(configuration: configuration)
-    }
-
-    private func longPressDuration(for _: Int, in _: UITabBarController) -> TimeInterval {
-        configuration.minimumPressDuration
-    }
-
-    private func moreTabView(in tabBarController: UITabBarController, moreTabIndex: Int) -> UIView? {
-        let indexedViews = tabBarIndexedViews(in: tabBarController.tabBar)
-        return indexedViews.first { $0.0 == moreTabIndex }?.1
-    }
-
-    private func resolvedMoreControl(
-        in tabBarController: UITabBarController,
-        moreTabIndex: Int
-    ) -> UIControl? {
-        let fallbackControls = tabBarFallbackControls(in: tabBarController.tabBar)
-        guard !fallbackControls.isEmpty else {
-            return nil
-        }
-
-        let isRTL = tabBarController.tabBar.effectiveUserInterfaceLayoutDirection == .rightToLeft
-        let sortedControls = fallbackControls.sorted { left, right in
-            let leftFrame = left.convert(left.bounds, to: tabBarController.tabBar)
-            let rightFrame = right.convert(right.bounds, to: tabBarController.tabBar)
-            if isRTL {
-                return leftFrame.minX > rightFrame.minX
-            }
-            return leftFrame.minX < rightFrame.minX
-        }
-
-        guard sortedControls.indices.contains(moreTabIndex) else {
-            return nil
-        }
-        return sortedControls[moreTabIndex]
-    }
-
-    private func moreMenuRequest(using requestCore: TabBarMenuRequestCore) -> MoreMenuRequest? {
-        MoreMenuRequest.make(delegate: delegate, core: requestCore)
-    }
-
-    private func itemMenuRequest(using requestCore: TabBarMenuRequestCore) -> ItemMenuRequest? {
-        ItemMenuRequest.make(delegate: delegate, core: requestCore)
-    }
-
-    // MARK: - More tab selection
-
-    private func makeMoreMenuPresentation(
-        in tabBarController: UITabBarController,
-        request: MoreMenuRequest,
-        delegate: TabBarMenuContentDelegate
-    ) -> MoreMenuPresentation? {
-        guard let menu = request.menu(in: tabBarController, delegate: delegate),
-              let moreTabIndex = request.moreTabStartIndex(in: tabBarController),
-              let sourceView = moreTabView(in: tabBarController, moreTabIndex: moreTabIndex),
-              let context = makePresentationContext(for: sourceView, in: tabBarController) else {
-            return nil
-        }
-        return MoreMenuPresentation(
-            menu: menu,
-            sourceView: sourceView,
-            context: context,
-            moreTabIndex: moreTabIndex
-        )
-    }
-
-    private func presentMoreMenu(request: MoreMenuRequest, in tabBarController: UITabBarController) -> Bool {
-        guard let delegate else {
-            return false
-        }
-        guard let presentation = makeMoreMenuPresentation(
-            in: tabBarController,
-            request: request,
-            delegate: delegate
-        ) else {
-            return false
-        }
-        let hostButton = makeMenuHostButton(in: presentation.context.containerView)
-        let placement = request.menuPresentationPlacement(
-            in: tabBarController,
-            presentationContext: presentation.context,
-            hostButton: hostButton,
-            delegate: delegate
-        )
-        presentMenu(
-            presentation.menu,
-            tabFrame: presentation.context.tabFrame,
-            in: presentation.context.containerView,
-            placement: placement,
-            hostButton: hostButton,
-            sourceView: presentation.sourceView
-        )
-        return true
-    }
-
-    private func handleMoreSelection(
-        _ item: UITabBarItem,
-        in tabBarController: UITabBarController,
-        request: MoreMenuRequest? = nil
-    ) -> Bool {
-        guard let request = request ?? moreMenuRequest(using: makeRequestCore()) else {
-            return false
-        }
-        guard request.matches(item: item, in: tabBarController) else {
-            return false
-        }
-        return presentMoreMenu(request: request, in: tabBarController)
-    }
-
-    private func handleMoreSelection(
-        control: UIControl,
-        in tabBarController: UITabBarController,
-        request: MoreMenuRequest? = nil
-    ) -> (didHandle: Bool, shouldCallDefault: Bool) {
-        guard let request = request ?? moreMenuRequest(using: makeRequestCore()),
-              let moreTabIndex = request.moreTabStartIndex(in: tabBarController) else {
-            return (false, true)
-        }
-
-        let matchesMoreControl: Bool = {
-            if let resolvedIndex = resolvedTabIndex(for: control, in: tabBarController),
-               resolvedIndex == moreTabIndex {
-                return true
-            }
-            guard let moreControl = resolvedMoreControl(
-                in: tabBarController,
-                moreTabIndex: moreTabIndex
-            ) else {
-                return false
-            }
-            return moreControl === control
-        }()
-        guard matchesMoreControl else {
-            return (false, true)
-        }
-        return presentMoreMenu(request: request, in: tabBarController) ? (true, false) : (true, true)
-    }
-
-    private func dismissTransientOverflowIfNeeded(
-        in tabBarController: UITabBarController,
-        allowingDefaultMoreSelection: Bool
-    ) {
-        if allowingDefaultMoreSelection {
-            guard tabBarController.tabBarMenuIsPresentingTransientOverflowContent else {
-                return
-            }
-            _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
-            return
-        }
-
-        guard tabBarController.tabBarMenuHasViewControllerTransientOverflowContent else {
-            return
-        }
-        _ = tabBarController.dismissTabBarMenuTransientOverflowIfNeeded()
-    }
-
-    // MARK: - Long press
-
-    private func handleMenuTrigger(tabIndex: Int, sourceView: UIView, in tabBarController: UITabBarController) {
-        guard let context = makePresentationContext(for: sourceView, in: tabBarController) else {
-            return
-        }
-        guard let plan = makeMenuPlan(for: tabIndex, in: tabBarController, context: context) else {
-            return
-        }
-        presentPlannedMenu(plan, context: context, sourceView: sourceView)
-    }
-
     @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
         guard recognizer.state == .began,
               let view = recognizer.view,
@@ -695,7 +600,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return
         }
         if let currentTabIndex = resolvedTabIndex(for: longPressRecognizer, sourceView: view, in: tabBarController) {
-            handleMenuTrigger(tabIndex: currentTabIndex, sourceView: view, in: tabBarController)
+            _ = handleInteraction(.longPress, at: currentTabIndex, sourceView: view)
             return
         }
 
@@ -703,7 +608,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard let currentTabIndex = resolvedTabIndex(for: longPressRecognizer, sourceView: view, in: tabBarController) else {
             return
         }
-        handleMenuTrigger(tabIndex: currentTabIndex, sourceView: view, in: tabBarController)
+        _ = handleInteraction(.longPress, at: currentTabIndex, sourceView: view)
     }
 
     func gestureRecognizer(
@@ -735,9 +640,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     func resolvedTabIndex(for sourceView: UIView, in tabBarController: UITabBarController) -> Int? {
-        let prefersFallbackOrdering = tabBarController.tabBarMenuHasActiveUITabMoreSelection
-        if !prefersFallbackOrdering,
-           let directMatch = tabBarIndexedViews(in: tabBarController.tabBar).first(where: { $0.1 === sourceView })?.0 {
+        if let directMatch = tabBarIndexedViews(in: tabBarController.tabBar).first(where: { $0.1 === sourceView })?.0 {
             return directMatch
         }
 

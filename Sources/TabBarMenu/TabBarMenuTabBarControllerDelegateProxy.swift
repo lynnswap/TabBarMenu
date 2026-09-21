@@ -1,6 +1,7 @@
 import UIKit
 
 final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControllerDelegate {
+    weak var coordinator: TabBarMenuCoordinator?
     nonisolated(unsafe) weak var forwardedTabBarController: UITabBarController?
     weak var tabBarController: UITabBarController? {
         didSet {
@@ -70,20 +71,67 @@ final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControlle
         return proposedViewControllers
     }
 
+    func allowsSelection(of content: TabBarContent, in controller: UITabBarController) -> Bool {
+        guard let originalDelegate else { return true }
+        switch content {
+        case .tab(let tab):
+            if let allowed = originalDelegate.tabBarController?(controller, shouldSelectTab: tab) {
+                return allowed
+            }
+            let permission: ((UITabBarController, UIViewController) -> Bool)? = originalDelegate.tabBarController
+            guard let permission, let viewController = tab.resolvedMoreSelectionViewController else { return true }
+            return permission(controller, viewController)
+        case .viewController(let viewController):
+            return originalDelegate.tabBarController?(controller, shouldSelect: viewController) ?? true
+        }
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+        if coordinator?.isSelectingProgrammatically == true { return true }
+        coordinator?.willSelectNativeContent(.tab(tab))
+        let allowed = allowsSelection(of: .tab(tab), in: tabBarController)
+        if !allowed { coordinator?.cancelNativeSelection() }
+        return allowed
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+        if coordinator?.isSelectingProgrammatically == true { return true }
+        if tabBarController.tabs.isEmpty {
+            coordinator?.willSelectNativeContent(.viewController(viewController))
+        }
+        let allowed = allowsSelection(of: .viewController(viewController), in: tabBarController)
+        if !allowed { coordinator?.cancelNativeSelection() }
+        return allowed
+    }
+
     func tabBarController(
         _ tabBarController: UITabBarController,
         didSelectTab tab: UITab,
         previousTab: UITab?
     ) {
-        originalDelegate?.tabBarController?(tabBarController, didSelectTab: tab, previousTab: previousTab)
+        let recipient = originalDelegate
+        let coordinator = coordinator
         tabBarController.tabBarMenuDidSelectTab(tab, previousTab: previousTab)
+        coordinator?.didSelectNativeContent(.tab(tab))
+        let forward: @MainActor () -> Void = {
+            recipient?.tabBarController?(tabBarController, didSelectTab: tab, previousTab: previousTab)
+        }
+        if let coordinator { coordinator.forwardUIKitCompletion(forward) } else { forward() }
     }
 
     func tabBarController(
         _ tabBarController: UITabBarController,
         didSelect viewController: UIViewController
     ) {
-        originalDelegate?.tabBarController?(tabBarController, didSelect: viewController)
+        let recipient = originalDelegate
+        let coordinator = coordinator
         tabBarController.tabBarMenuDidSelectViewController(viewController)
+        if tabBarController.tabs.isEmpty {
+            coordinator?.didSelectNativeContent(.viewController(viewController))
+        }
+        let forward: @MainActor () -> Void = {
+            recipient?.tabBarController?(tabBarController, didSelect: viewController)
+        }
+        if let coordinator { coordinator.forwardUIKitCompletion(forward) } else { forward() }
     }
 }

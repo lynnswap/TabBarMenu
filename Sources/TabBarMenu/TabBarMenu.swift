@@ -21,8 +21,6 @@ public enum TabBarMenuAnchorPlacement: Equatable {
     case above(offset: CGFloat = TabBarMenuAnchorPlacement.defaultAboveOffset)
     /// Uses a custom point in the container view's coordinate space.
     case custom(CGPoint)
-    /// Delegate handles `menuHostButton` positioning manually.
-    case manual
 }
 
 /// Configuration for TabBarMenu behaviors.
@@ -42,125 +40,104 @@ public struct TabBarMenuConfiguration: Equatable {
     }
 }
 
-/// Objective-C-compatible delegate methods for menu content.
-///
-/// Prefer conforming to `TabBarMenuDelegate` instead of this protocol directly.
-@MainActor @objc public protocol TabBarMenuContentDelegate: NSObjectProtocol {
-    /// Asks the delegate for the menu to present for the specified tab.
-    /// - Parameters:
-    ///   - tabBarController: The tab bar controller requesting the menu.
-    ///   - tab: The tab associated with the long-pressed item.
-    /// - Note: Use `tabBarController(_:menuForMoreTabWith:)` to provide a menu for the system More tab.
-    /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
-    @objc optional func tabBarController(
-        _ tabBarController: UITabBarController,
-        tab: UITab?
-    ) -> UIMenu?
-
-    /// Asks the delegate for the menu to present for the specified view controller.
-    /// - Parameters:
-    ///   - tabBarController: The tab bar controller requesting the menu.
-    ///   - viewController: The view controller associated with the long-pressed item.
-    /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
-    @objc optional func tabBarController(
-        _ tabBarController: UITabBarController,
-        viewController: UIViewController?
-    ) -> UIMenu?
-
-    /// Asks the delegate for the menu to present for the system More tab.
-    /// - Parameters:
-    ///   - tabBarController: The tab bar controller requesting the menu.
-    ///   - tabs: The tabs that would appear in the More list, in display order.
-    /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
-    @objc(tabBarController:menuForMoreTabWithTabs:)
-    optional func tabBarController(
-        _ tabBarController: UITabBarController,
-        menuForMoreTabWith tabs: [UITab]
-    ) -> UIMenu?
-
-    /// Asks the delegate for the menu to present for the system More tab.
-    /// - Parameters:
-    ///   - tabBarController: The tab bar controller requesting the menu.
-    ///   - viewControllers: The view controllers that would appear in the More list, in display order.
-    /// - Returns: A `UIMenu` to present, or `nil` to skip presenting a menu.
-    @objc(tabBarController:menuForMoreTabWithViewControllers:)
-    optional func tabBarController(
-        _ tabBarController: UITabBarController,
-        menuForMoreTabWith viewControllers: [UIViewController]
-    ) -> UIMenu?
+/// The recognized gesture, before menu presentation or tab selection begins.
+public enum TabBarInteraction: Equatable, Sendable {
+    case tap
+    case longPress
 }
 
-/// A Swift-only delegate that customizes menu anchor placement.
-@MainActor public protocol TabBarMenuPresentationDelegate: AnyObject {
-    /// Asks the delegate to configure menu presentation and anchor placement.
-    /// - Parameters:
-    ///   - tabBarController: The tab bar controller requesting the anchor placement.
-    ///   - tab: The tab associated with the long-pressed item, or `nil` for the system More tab.
-    ///   - tabFrame: The tab bar item frame in `containerView` coordinates.
-    ///   - containerView: The view hosting the menu.
-    ///   - menuHostButton: The internal button used to present the menu. Configure properties like
-    ///     `preferredMenuElementOrder` here.
-    /// - Returns: The placement to use, or `nil` to place the menu above the tab using the default offset.
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        configureMenuPresentationFor tab: UITab?,
-        tabFrame: CGRect,
-        in containerView: UIView,
-        menuHostButton: UIButton
-    ) -> TabBarMenuAnchorPlacement?
-
-    /// Asks the delegate to configure menu presentation and anchor placement.
-    /// - Parameters:
-    ///   - tabBarController: The tab bar controller requesting the anchor placement.
-    ///   - viewController: The view controller associated with the long-pressed item, or `nil` for the system More tab.
-    ///   - tabFrame: The tab bar item frame in `containerView` coordinates.
-    ///   - containerView: The view hosting the menu.
-    ///   - menuHostButton: The internal button used to present the menu.
-    /// - Returns: The placement to use, or `nil` to place the menu above the tab using the default offset.
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        configureMenuPresentationFor viewController: UIViewController?,
-        tabFrame: CGRect,
-        in containerView: UIView,
-        menuHostButton: UIButton
-    ) -> TabBarMenuAnchorPlacement?
-}
-
-/// A delegate that provides contextual menus for a `UITabBarController`.
+/// The tab bar item that received an interaction.
 ///
-/// Implement either the `UITab`-based delegate methods (iOS 18+) or the `UIViewController`-based delegate methods,
-/// depending on how you configure your `UITabBarController`.
-///
-/// - Important: Return `nil` to disable the menu for a given item.
-/// - Note: Conforming types should be Objective-C compatible (for example, subclass `NSObject`) so `responds(to:)` works.
-@MainActor public protocol TabBarMenuDelegate: TabBarMenuContentDelegate, TabBarMenuPresentationDelegate {}
-
+/// More is a presentation of a group of tabs, not a selectable content tab.
+/// Its selected content is non-nil only while that content is active.
 @MainActor
-public extension TabBarMenuPresentationDelegate {
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        configureMenuPresentationFor tab: UITab?,
-        tabFrame: CGRect,
-        in containerView: UIView,
-        menuHostButton: UIButton
-    ) -> TabBarMenuAnchorPlacement? {
-        nil
-    }
+public enum TabBarItem {
+    case tab(UITab)
+    case more(tabs: [UITab], selectedTab: UITab?)
+    /// A tab configured through `UITabBarController.viewControllers`.
+    case viewController(UIViewController)
+    case moreViewControllers(viewControllers: [UIViewController], selectedViewController: UIViewController?)
+}
 
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        configureMenuPresentationFor viewController: UIViewController?,
-        tabFrame: CGRect,
-        in containerView: UIView,
-        menuHostButton: UIButton
-    ) -> TabBarMenuAnchorPlacement? {
-        nil
+/// A menu and the presentation choices for one interaction.
+@MainActor
+public struct TabBarMenuPresentation {
+    public var menu: UIMenu
+    public var anchorPlacement: TabBarMenuAnchorPlacement
+    /// Defaults to UIKit's automatic ordering. Use `.fixed` to preserve the children array order.
+    public var preferredMenuElementOrder: UIContextMenuConfiguration.ElementOrder
+
+    public init(
+        menu: UIMenu,
+        anchorPlacement: TabBarMenuAnchorPlacement = .above(),
+        preferredMenuElementOrder: UIContextMenuConfiguration.ElementOrder = .automatic
+    ) {
+        self.menu = menu
+        self.anchorPlacement = anchorPlacement
+        self.preferredMenuElementOrder = preferredMenuElementOrder
     }
 }
 
-/// Deprecated. Use `TabBarMenuDelegate` and implement the view-controller-based delegate methods instead.
-@available(*, deprecated, message: "Use TabBarMenuDelegate instead.")
-@MainActor public protocol TabBarMenuViewControllerDelegate: TabBarMenuDelegate {}
+/// Prepares tab bar interactions and receives completed user selections.
+@MainActor
+public protocol TabBarMenuDelegate: AnyObject {
+    /// Called once after recognizing a tap or long press, before changing selection or showing a menu.
+    ///
+    /// Return a presentation to consume the interaction by showing its menu. Return nil to
+    /// allow a tap to select its tab, or to leave a long press without a menu.
+    /// A nil presentation for a More tap reselects its active content. If there is no active
+    /// More content, UIKit's More list opens instead. Opening a menu never sends `didSelect`.
+    /// This method is not called for layout, programmatic selection, or menu action execution.
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        prepareFor interaction: TabBarInteraction,
+        on item: TabBarItem
+    ) -> TabBarMenuPresentation?
+
+    /// Called once after a user selects or reselects actual tab content.
+    ///
+    /// Compare identities with `previousTab` to recognize a reselection. `isOverflow` describes
+    /// whether the selected tab is in More at selection time, not the origin of the interaction.
+    /// Programmatic `selectTabContent` calls are silent; use `selectionAction(for:)` in menus.
+    /// This notification precedes the forwarded UIKit `didSelect` / `didSelectTab` or More-navigation
+    /// `didShow` callback, so synchronous changes there cannot discard the completed selection.
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        didSelect selectedTab: UITab,
+        previousTab: UITab?,
+        isOverflow: Bool
+    )
+
+    /// The selection notification for a controller configured with `viewControllers`.
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        didSelect selectedViewController: UIViewController,
+        previousViewController: UIViewController?,
+        isOverflow: Bool
+    )
+}
+
+public extension TabBarMenuDelegate {
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        prepareFor interaction: TabBarInteraction,
+        on item: TabBarItem
+    ) -> TabBarMenuPresentation? { nil }
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        didSelect selectedTab: UITab,
+        previousTab: UITab?,
+        isOverflow: Bool
+    ) {}
+
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        didSelect selectedViewController: UIViewController,
+        previousViewController: UIViewController?,
+        isOverflow: Bool
+    ) {}
+}
 
 @MainActor
 public extension UITabBarController {
@@ -213,7 +190,28 @@ public extension UITabBarController {
         tabBarMenuCoordinator?.updateVisibleMenu(update) ?? false
     }
 
-    private var tabBarMenuCoordinator: TabBarMenuCoordinator? {
+    /// Makes an action that selects this tab and sends one user-selection notification.
+    /// Membership and the UIKit delegate's selection permission are checked when the action runs.
+    func selectionAction(for tab: UITab) -> UIAction {
+        UIAction(title: tab.title, image: tab.image, state: tabBarMenuSelectedTab === tab ? .on : .off) { [weak self, weak tab] _ in
+            guard let self, let tab else { return }
+            self.tabBarMenuCoordinator?.selectFromUser(.tab(tab))
+        }
+    }
+
+    /// Makes a user-selection action for a `viewControllers`-based tab bar.
+    func selectionAction(for viewController: UIViewController) -> UIAction {
+        UIAction(
+            title: viewController.tabBarItem.title ?? viewController.title ?? "",
+            image: viewController.tabBarItem.image,
+            state: tabBarMenuSelectedViewController === viewController ? .on : .off
+        ) { [weak self, weak viewController] _ in
+            guard let self, let viewController else { return }
+            self.tabBarMenuCoordinator?.selectFromUser(.viewController(viewController))
+        }
+    }
+
+    internal var tabBarMenuCoordinator: TabBarMenuCoordinator? {
         get {
             ObjectiveCInterop.associatedObject(for: self, key: &TabBarMenuAssociatedKeys.coordinator)
         }

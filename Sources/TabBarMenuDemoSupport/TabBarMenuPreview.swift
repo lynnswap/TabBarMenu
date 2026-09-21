@@ -26,6 +26,7 @@ private enum PreviewTabDefaults {
 
 private enum UITestConfiguration {
     static let isEnabled = ProcessInfo.processInfo.arguments.contains("-ui-testing")
+    static let replacesMoreDelegate = ProcessInfo.processInfo.arguments.contains("-replace-more-delegate")
 }
 
 @MainActor
@@ -44,6 +45,16 @@ private final class TabBarMenuPreviewViewModel {
             applyTabs()
         }
     }
+    var selectionStatus = "Select a tab"
+    var navigationStatus = "Waiting for More"
+    private var selectionCount = 0
+
+    func recordSelection(title: String, isReselection: Bool, isOverflow: Bool) {
+        selectionCount += 1
+        let action = isReselection ? "Reselected" : "Selected"
+        selectionStatus = "\(selectionCount): \(action) \(title)\(isOverflow ? " (More)" : "")"
+    }
+
     var isSearchTabEnabled = false {
         didSet {
             applyTabs()
@@ -127,6 +138,22 @@ public enum TabBarMenuPreviewMode: String {
 private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDelegate, TabBarMenuPreviewContent {
     weak var viewModel: TabBarMenuPreviewViewModel?
     fileprivate var hasAppliedContent = false
+    private let replacementMoreDelegate = PreviewMoreNavigationDelegate()
+    private let initialMoreDelegate = PreviewMoreNavigationDelegate()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        if UITestConfiguration.replacesMoreDelegate {
+            initialMoreDelegate.willShow = { [weak self] navigation, shown in
+                guard let self, shown === navigation.viewControllers.first else { return }
+                navigation.delegate = self.replacementMoreDelegate
+                self.viewModel?.navigationStatus = "More delegate replaced"
+            }
+            replacementMoreDelegate.didShow = { [weak self] shown in
+                self?.viewModel?.navigationStatus = "Forwarded: \(shown.title ?? "More")"
+            }
+        }
+    }
 
     override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
         super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
@@ -145,26 +172,36 @@ private class TabBarMenuPreviewBaseController: UITabBarController, TabBarMenuDel
         preconditionFailure("Override in subclass.")
     }
 
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        configureMenuPresentationFor tab: UITab?,
-        tabFrame: CGRect,
-        in containerView: UIView,
-        menuHostButton: UIButton
-    ) -> TabBarMenuAnchorPlacement? {
-        menuHostButton.preferredMenuElementOrder = .fixed
-        return nil
+    fileprivate func prepareNativeMoreDelegateTest() {
+        moreNavigationController.delegate = initialMoreDelegate
     }
 
     func tabBarController(
         _ tabBarController: UITabBarController,
-        configureMenuPresentationFor viewController: UIViewController?,
-        tabFrame: CGRect,
-        in containerView: UIView,
-        menuHostButton: UIButton
-    ) -> TabBarMenuAnchorPlacement? {
-        menuHostButton.preferredMenuElementOrder = .fixed
-        return nil
+        prepareFor interaction: TabBarInteraction,
+        on item: TabBarItem
+    ) -> TabBarMenuPresentation? { nil }
+
+    func tabBarController(
+        _ controller: UITabBarController,
+        didSelect tab: UITab,
+        previousTab: UITab?,
+        isOverflow: Bool
+    ) {
+        viewModel?.recordSelection(title: tab.title, isReselection: tab === previousTab, isOverflow: isOverflow)
+    }
+
+    func tabBarController(
+        _ controller: UITabBarController,
+        didSelect viewController: UIViewController,
+        previousViewController: UIViewController?,
+        isOverflow: Bool
+    ) {
+        viewModel?.recordSelection(
+            title: viewController.title ?? "Tab",
+            isReselection: viewController === previousViewController,
+            isOverflow: isOverflow
+        )
     }
 
     fileprivate func makeMenu(title: String, deleteHandler: @escaping () -> Void) -> UIMenu {
@@ -231,33 +268,31 @@ private final class TabBarMenuPreviewUITabController: TabBarMenuPreviewBaseContr
         hasAppliedContent = true
     }
 
-    func tabBarController(
+    override func tabBarController(
         _ tabBarController: UITabBarController,
-        tab: UITab?
-    ) -> UIMenu? {
-        guard let tab else {
+        prepareFor interaction: TabBarInteraction,
+        on item: TabBarItem
+    ) -> TabBarMenuPresentation? {
+        let menu: UIMenu
+        switch item {
+        case .tab(let tab):
+            guard interaction == .longPress else { return nil }
+            menu = makeMenu(title: tab.title) { [weak self] in
+                self?.viewModel?.deleteTab(tab)
+            }
+        case .more(let tabs, let selectedTab):
+            if UITestConfiguration.replacesMoreDelegate, interaction == .tap {
+                if selectedTab == nil { prepareNativeMoreDelegateTest() }
+                return nil
+            }
+            if interaction == .tap, selectedTab != nil { return nil }
+            menu = UIMenu(children: tabs.map { tabBarController.selectionAction(for: $0) })
+        case .viewController, .moreViewControllers:
             return nil
         }
-        return makeMenu(title: tab.title) { [weak self] in
-            self?.viewModel?.deleteTab(tab)
-        }
+        return .init(menu: menu, preferredMenuElementOrder: .fixed)
     }
 
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        menuForMoreTabWith tabs: [UITab]
-    ) -> UIMenu? {
-        guard !tabs.isEmpty else {
-            return nil
-        }
-        let actions = tabs.map { tab in
-            let title = tab.title.isEmpty ? "Untitled" : tab.title
-            return UIAction(title: title, image: tab.image) { _ in
-                _ = tabBarController.selectTabContent(tab)
-            }
-        }
-        return UIMenu(children: actions)
-    }
 }
 
 @MainActor
@@ -272,34 +307,31 @@ private final class TabBarMenuPreviewViewControllerController: TabBarMenuPreview
         hasAppliedContent = true
     }
 
-    func tabBarController(
+    override func tabBarController(
         _ tabBarController: UITabBarController,
-        viewController: UIViewController?
-    ) -> UIMenu? {
-        guard let viewController else {
+        prepareFor interaction: TabBarInteraction,
+        on item: TabBarItem
+    ) -> TabBarMenuPresentation? {
+        let menu: UIMenu
+        switch item {
+        case .viewController(let controller):
+            guard interaction == .longPress else { return nil }
+            menu = makeMenu(title: controller.title ?? controller.tabBarItem.title ?? "") { [weak self] in
+                self?.viewModel?.deleteTab(controller)
+            }
+        case .moreViewControllers(let controllers, let selected):
+            if UITestConfiguration.replacesMoreDelegate, interaction == .tap {
+                if selected == nil { prepareNativeMoreDelegateTest() }
+                return nil
+            }
+            if interaction == .tap, selected != nil { return nil }
+            menu = UIMenu(children: controllers.map { tabBarController.selectionAction(for: $0) })
+        case .tab, .more:
             return nil
         }
-        let title = viewController.title ?? viewController.tabBarItem.title ?? ""
-        return makeMenu(title: title) { [weak self] in
-            self?.viewModel?.deleteTab(viewController)
-        }
+        return .init(menu: menu, preferredMenuElementOrder: .fixed)
     }
 
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        menuForMoreTabWith viewControllers: [UIViewController]
-    ) -> UIMenu? {
-        guard !viewControllers.isEmpty else {
-            return nil
-        }
-        let actions = viewControllers.map { viewController in
-            let title = viewController.title ?? viewController.tabBarItem.title ?? "Untitled"
-            return UIAction(title: title, image: viewController.tabBarItem.image) { _ in
-                _ = tabBarController.selectTabContent(viewController)
-            }
-        }
-        return UIMenu(children: actions)
-    }
 }
 
 @MainActor
@@ -321,6 +353,20 @@ private final class TabBarMenuPreviewContainerController: UIViewController {
         view.addSubview(controller.view)
         controller.didMove(toParent: self)
         currentController = controller
+    }
+}
+
+@MainActor
+private final class PreviewMoreNavigationDelegate: NSObject, UINavigationControllerDelegate {
+    var willShow: ((UINavigationController, UIViewController) -> Void)?
+    var didShow: ((UIViewController) -> Void)?
+
+    func navigationController(_ navigation: UINavigationController, willShow controller: UIViewController, animated: Bool) {
+        willShow?(navigation, controller)
+    }
+
+    func navigationController(_ navigation: UINavigationController, didShow controller: UIViewController, animated: Bool) {
+        didShow?(controller)
     }
 }
 
@@ -369,6 +415,18 @@ public struct TabBarMenuPreviewScreen: View {
     public var body: some View {
         TabBarMenuPreviewRepresentable(mode: mode, viewModel: viewModel)
             .ignoresSafeArea()
+            .safeAreaInset(edge: .top) {
+                if UITestConfiguration.replacesMoreDelegate {
+                    Text(viewModel.navigationStatus)
+                        .accessibilityIdentifier("navigation-status")
+                }
+                Text(viewModel.selectionStatus)
+                    .font(.caption)
+                    .padding(8)
+                    .frame(maxWidth: .infinity)
+                    .background(.background)
+                    .accessibilityIdentifier("selection-status")
+            }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Toggle("Search Tab", isOn: Bindable(viewModel).isSearchTabEnabled)
