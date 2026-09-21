@@ -184,6 +184,8 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return true
     }
 
+    var isSelectingProgrammatically: Bool { programmaticSelectionDepth > 0 }
+
     func beginProgrammaticSelection() {
         programmaticSelectionDepth += 1
         pendingSelection = nil
@@ -249,15 +251,13 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         guard let tabBarController, tabBarController.tabBarMenuOwns(content),
               delegate != nil else { return }
         let previous = tabBarController.tabBarMenuSelectedContent
-        let originalDelegate = tabBarControllerDelegateProxy?.originalDelegate
         switch content {
         case .tab(let tab):
             if #available(iOS 18.4, *), !tab.isEnabled { return }
-            guard originalDelegate?.tabBarController?(tabBarController, shouldSelectTab: tab) ?? true else { return }
         case .viewController(let controller):
-            guard controller.tabBarItem.isEnabled,
-                  originalDelegate?.tabBarController?(tabBarController, shouldSelect: controller) ?? true else { return }
+            guard controller.tabBarItem.isEnabled else { return }
         }
+        guard tabBarControllerDelegateProxy?.allowsSelection(of: content, in: tabBarController) ?? true else { return }
         // Reselection is a notification, not a reconstruction of More's navigation stack.
         if previous != content {
             let didSelect: Bool

@@ -261,3 +261,57 @@ func overflowLongPressUsesItemIdentity() async throws {
         #expect(coordinator.resolvedTabIndex(for: view, in: context.controller) == index)
     }
 }
+
+@MainActor
+private final class LegacySelectionPermission: NSObject, UITabBarControllerDelegate {
+    var requests = 0
+    var allowsSelection = false
+    func tabBarController(_ controller: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+        requests += 1
+        return allowsSelection
+    }
+}
+
+@Test("UITab actions honor a legacy permission delegate exactly once")
+@MainActor
+func legacySelectionPermissionForUITab() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = InteractionDelegate()
+    let permission = LegacySelectionPermission()
+    context.controller.delegate = permission
+    context.controller.menuDelegate = delegate
+    let action = context.controller.selectionAction(for: context.tabs[5])
+    UIControl().sendAction(action)
+    #expect(permission.requests == 1)
+    #expect(delegate.selections.isEmpty)
+    permission.allowsSelection = true
+    UIControl().sendAction(action)
+    await drainMainQueue()
+    #expect(permission.requests == 2)
+    #expect(delegate.selections.count == 1)
+}
+
+@MainActor
+private final class MoreNavigationDelegate: NSObject, UINavigationControllerDelegate {
+    var shown: [UIViewController] = []
+    func navigationController(_ controller: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
+        shown.append(viewController)
+    }
+}
+
+@Test("More navigation delegates are forwarded and restored on detach")
+@MainActor
+func moreNavigationDelegateLifetime() throws {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = InteractionDelegate()
+    let navigationDelegate = MoreNavigationDelegate()
+    let navigation = context.controller.moreNavigationController
+    navigation.delegate = navigationDelegate
+    context.controller.menuDelegate = delegate
+    let proxy = try #require(navigation.delegate)
+    let content = UIViewController()
+    proxy.navigationController?(navigation, didShow: content, animated: false)
+    #expect(navigationDelegate.shown.last === content)
+    context.controller.menuDelegate = nil
+    #expect(navigation.delegate === navigationDelegate)
+}

@@ -71,18 +71,35 @@ final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControlle
         return proposedViewControllers
     }
 
+    func allowsSelection(of content: TabBarContent, in controller: UITabBarController) -> Bool {
+        guard let originalDelegate else { return true }
+        switch content {
+        case .tab(let tab):
+            if let allowed = originalDelegate.tabBarController?(controller, shouldSelectTab: tab) {
+                return allowed
+            }
+            let permission: ((UITabBarController, UIViewController) -> Bool)? = originalDelegate.tabBarController
+            guard let permission, let viewController = tab.resolvedMoreSelectionViewController else { return true }
+            return permission(controller, viewController)
+        case .viewController(let viewController):
+            return originalDelegate.tabBarController?(controller, shouldSelect: viewController) ?? true
+        }
+    }
+
     func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+        if coordinator?.isSelectingProgrammatically == true { return true }
         coordinator?.willSelectNativeContent(.tab(tab))
-        let allowed = originalDelegate?.tabBarController?(tabBarController, shouldSelectTab: tab) ?? true
+        let allowed = allowsSelection(of: .tab(tab), in: tabBarController)
         if !allowed { coordinator?.cancelNativeSelection() }
         return allowed
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+        if coordinator?.isSelectingProgrammatically == true { return true }
         if tabBarController.tabs.isEmpty {
             coordinator?.willSelectNativeContent(.viewController(viewController))
         }
-        let allowed = originalDelegate?.tabBarController?(tabBarController, shouldSelect: viewController) ?? true
+        let allowed = allowsSelection(of: .viewController(viewController), in: tabBarController)
         if !allowed { coordinator?.cancelNativeSelection() }
         return allowed
     }
