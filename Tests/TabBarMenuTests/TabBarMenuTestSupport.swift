@@ -260,13 +260,24 @@ struct ViewControllerTabBarTestContext {
 }
 
 @MainActor
+final class LayoutCountingTabBar: UITabBar {
+    private(set) var layoutPassCount = 0
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layoutPassCount += 1
+    }
+}
+
+@MainActor
 final class StandaloneTabBarHost {
     let containerView: UIView
     let tabBar: UITabBar
 
-    init(size: CGSize = CGSize(width: 320, height: 49)) {
+    init(size: CGSize = CGSize(width: 320, height: 49), tabBar: UITabBar = UITabBar()) {
         containerView = UIView(frame: CGRect(origin: .zero, size: size))
-        tabBar = UITabBar(frame: containerView.bounds)
+        self.tabBar = tabBar
+        tabBar.frame = containerView.bounds
         tabBar.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         containerView.addSubview(tabBar)
         layoutIfNeeded()
