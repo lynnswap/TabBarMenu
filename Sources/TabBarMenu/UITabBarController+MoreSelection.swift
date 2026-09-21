@@ -76,7 +76,7 @@ extension UITabBarController {
     }
 
     var tabBarMenuSelectedTab: UITab? {
-        // On iOS 18 the selected tab element can still name the previous visible tab
+        // WORKAROUND: On iOS 18 the selected tab element can still name the previous visible tab
         // while More is displaying the content selected through its navigation stack.
         if let state = uiTabOverflowPresentationState,
            tabBar.selectedItem === state.preservedMoreItem {
@@ -121,6 +121,8 @@ extension UITabBarController {
     }
 
     nonisolated private var usesUITabDisplayedViewControllersOverflowPath: Bool {
+        // WORKAROUND: iOS 18 lacks _selectTabElementIfPossible: and the selection-update
+        // suppression path used on iOS 26+. Its overflow selection must go through More.
         if #available(iOS 26.0, *) {
             return true
         }
@@ -983,7 +985,7 @@ extension UITabBarController {
     }
 
     private func preparedMoreViewController(for viewController: UIViewController) -> UIViewController {
-        // UIKit can return nil after borrowing the navigation controller's root.
+        // WORKAROUND: UIKit can return nil after borrowing the navigation controller's root.
         let navigationRoot = (viewController as? UINavigationController)?.viewControllers.first
         if let preparedViewController = ObjectiveCInterop.performObjectSelector(
             UIMoreNavigationControllerRuntimeMethodNames.preparedViewController,

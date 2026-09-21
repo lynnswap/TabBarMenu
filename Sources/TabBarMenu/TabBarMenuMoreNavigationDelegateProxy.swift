@@ -26,7 +26,11 @@ final class TabBarMenuMoreNavigationDelegateProxy: NSObject, UINavigationControl
 
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
         let recipient = originalDelegate
+        let coordinator = coordinator
         coordinator?.didShowMoreContent(viewController)
-        recipient?.navigationController?(navigationController, didShow: viewController, animated: animated)
+        let forward: @MainActor () -> Void = {
+            recipient?.navigationController?(navigationController, didShow: viewController, animated: animated)
+        }
+        if let coordinator { coordinator.forwardUIKitCompletion(forward) } else { forward() }
     }
 }

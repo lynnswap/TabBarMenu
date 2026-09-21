@@ -342,9 +342,7 @@ func nativeMoreNavigationWithNavigationTabs(usesUITab: Bool) async throws {
     let expected: TabBarContent = usesUITab ? .tab(tabs[5]) : .viewController(owners[5])
     #expect(controller.tabBarMenuContent(for: target) == expected)
     let proxy = try #require(navigation.delegate)
-    proxy.navigationController?(navigation, willShow: target, animated: false)
     navigation.delegate = nil
-    navigation.setViewControllers([list, target], animated: false)
     #expect(ObjectiveCInterop.performVoidSelector(
         UITabBarControllerRuntimeMethodNames.setSelectedViewControllerAndNotify,
         on: controller, with: navigation
@@ -353,9 +351,15 @@ func nativeMoreNavigationWithNavigationTabs(usesUITab: Bool) async throws {
         UITabBarControllerRuntimeMethodNames.setSelectedTabBarItem,
         on: controller, with: try #require(moreTabBarItem(in: controller))
     ))
+    // More removes the root from its original owner before calling willShow.
+    owners[5].setViewControllers([], animated: false)
+    #expect(owners[5].viewControllers.isEmpty)
+    proxy.navigationController?(navigation, willShow: target, animated: false)
     setDisplayedViewController(owners[5], in: navigation)
+    navigation.setViewControllers([list, target], animated: false)
     navigation.delegate = proxy
     #expect(controller.tabBarMenuSelectedContent == expected)
+    #expect(navigation.topViewController === target)
     proxy.navigationController?(navigation, didShow: target, animated: false)
     if usesUITab {
         #expect(delegate.selections.count == 1)

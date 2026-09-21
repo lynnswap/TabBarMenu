@@ -110,9 +110,13 @@ final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControlle
         previousTab: UITab?
     ) {
         let recipient = originalDelegate
+        let coordinator = coordinator
         tabBarController.tabBarMenuDidSelectTab(tab, previousTab: previousTab)
         coordinator?.didSelectNativeContent(.tab(tab))
-        recipient?.tabBarController?(tabBarController, didSelectTab: tab, previousTab: previousTab)
+        let forward: @MainActor () -> Void = {
+            recipient?.tabBarController?(tabBarController, didSelectTab: tab, previousTab: previousTab)
+        }
+        if let coordinator { coordinator.forwardUIKitCompletion(forward) } else { forward() }
     }
 
     func tabBarController(
@@ -120,10 +124,14 @@ final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControlle
         didSelect viewController: UIViewController
     ) {
         let recipient = originalDelegate
+        let coordinator = coordinator
         tabBarController.tabBarMenuDidSelectViewController(viewController)
         if tabBarController.tabs.isEmpty {
             coordinator?.didSelectNativeContent(.viewController(viewController))
         }
-        recipient?.tabBarController?(tabBarController, didSelect: viewController)
+        let forward: @MainActor () -> Void = {
+            recipient?.tabBarController?(tabBarController, didSelect: viewController)
+        }
+        if let coordinator { coordinator.forwardUIKitCompletion(forward) } else { forward() }
     }
 }

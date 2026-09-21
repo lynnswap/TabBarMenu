@@ -307,3 +307,90 @@ func detachDuringPreparation(usesUITab: Bool) throws {
     #expect(context.controller.delegate === original)
     #expect(menuDelegate.selections.isEmpty)
 }
+
+@Test("Menu actions deliver their completion before UIKit callbacks can remove the target or detach", arguments: [false, true], [false, true])
+@MainActor
+func menuActionCompletionBeforeForwarding(usesUITab: Bool, detachesMenu: Bool) async {
+    for index in [1, 5] {
+        let context = DelegateMutationContext(usesUITab: usesUITab, count: 6)
+        defer { withExtendedLifetime(context) {} }
+        let original = MutationUIKitDelegate()
+        let menuDelegate = MutationMenuDelegate()
+        context.controller.delegate = original
+        context.controller.menuDelegate = menuDelegate
+        original.onSelection = { controller in
+            #expect(menuDelegate.selections.count == 1)
+            if detachesMenu {
+                controller.menuDelegate = nil
+            } else {
+                context.replaceContent()
+            }
+        }
+        UIControl().sendAction(context.selectionAction(at: index))
+        await drainMainQueue()
+        // Overflow's transient presentation can suppress UIKit selection callbacks.
+        // The visible-tab helper explicitly requests one, so this path must exercise the mutation.
+        if index == 1 { #expect(original.selectionCalls > 0) }
+        #expect(menuDelegate.selections.count == 1)
+        #expect(menuDelegate.selections.first?.content == context.content(at: index))
+        #expect(menuDelegate.selections.first?.previous == context.content(at: 0))
+        #expect(menuDelegate.selections.first?.isOverflow == (index == 5))
+    }
+}
+
+@Test("Programmatic selection outside a user action still forwards UIKit completion immediately", arguments: [false, true])
+@MainActor
+func standaloneProgrammaticCompletionForwarding(usesUITab: Bool) {
+    let context = DelegateMutationContext(usesUITab: usesUITab)
+    defer { withExtendedLifetime(context) {} }
+    let original = MutationUIKitDelegate()
+    let menuDelegate = MutationMenuDelegate()
+    context.controller.delegate = original
+    context.controller.menuDelegate = menuDelegate
+    var completed = false
+    original.onSelection = { _ in completed = true }
+    context.selectProgrammatically(at: 1)
+    #expect(completed)
+    #expect(menuDelegate.selections.isEmpty)
+}
+
+@Test("A detached UIKit callback resolves to the selected replacement tab with the same identifier")
+@MainActor
+func detachedNativeTabCompletion() throws {
+    let context = DelegateMutationContext(usesUITab: true)
+    defer { withExtendedLifetime(context) {} }
+    let staleTab = context.tabs[0]
+    let currentTabs = makeTabs(count: 3)
+    context.controller.setTabs(currentTabs, animated: false)
+    let original = MutationUIKitDelegate()
+    let menuDelegate = MutationMenuDelegate()
+    context.controller.delegate = original
+    context.controller.menuDelegate = menuDelegate
+    #expect(context.controller.selectTabContent(currentTabs[0]))
+    let handler = try #require(context.controller.tabBar.tabBarMenuControlSelectionHandler)
+    #expect(handler(context.controller.tabBar, tabBarOrderedControls(in: context.controller.tabBar)[0]))
+    let proxy = try #require(context.controller.delegate as? TabBarMenuTabBarControllerDelegateProxy)
+    proxy.tabBarController(context.controller, didSelectTab: staleTab, previousTab: staleTab)
+    #expect(menuDelegate.selections.count == 1)
+    #expect(menuDelegate.selections.first?.content == .tab(currentTabs[0]))
+    #expect(menuDelegate.selections.first?.previous == .tab(currentTabs[0]))
+    #expect(menuDelegate.selections.first?.isOverflow == false)
+}
+
+@Test("Stale completions do not finish a different or unselected tab request", arguments: [false, true])
+@MainActor
+func mismatchedDetachedNativeTabCompletion(sameIdentifier: Bool) throws {
+    let context = DelegateMutationContext(usesUITab: true)
+    defer { withExtendedLifetime(context) {} }
+    let staleTab = context.tabs[sameIdentifier ? 1 : 0]
+    let currentTabs = makeTabs(count: 3)
+    context.controller.setTabs(currentTabs, animated: false)
+    let menuDelegate = MutationMenuDelegate()
+    context.controller.menuDelegate = menuDelegate
+    #expect(context.controller.selectTabContent(currentTabs[0]))
+    let coordinator = try #require(context.controller.tabBarMenuCoordinator)
+    coordinator.willSelectNativeContent(.tab(currentTabs[1]))
+    let proxy = try #require(context.controller.delegate as? TabBarMenuTabBarControllerDelegateProxy)
+    proxy.tabBarController(context.controller, didSelectTab: staleTab, previousTab: nil)
+    #expect(menuDelegate.selections.isEmpty)
+}

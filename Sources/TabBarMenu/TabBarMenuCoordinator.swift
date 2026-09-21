@@ -46,10 +46,11 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private weak var tabBarController: UITabBarController?
     private var tabBarControllerDelegateProxy: TabBarMenuTabBarControllerDelegateProxy?
     private var moreNavigationDelegateProxy: TabBarMenuMoreNavigationDelegateProxy?
-    private var pendingMoreSelection: (viewController: UIViewController, content: TabBarContent, previous: TabBarContent?)?
+    private var pendingMoreSelection: (viewController: UIViewController, previous: TabBarContent?)?
     private var menuHostButton: UIButton?
     private var lastGestureSyncEntries: [GestureSyncEntry] = []
     private var programmaticSelectionDepth = 0
+    private var deferredUIKitCompletions: [@MainActor () -> Void]?
     private var pendingSelection: (content: TabBarContent?, previous: TabBarContent?)?
 
     @MainActor deinit {
@@ -213,16 +214,24 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
 
     func didSelectNativeContent(_ content: TabBarContent) {
         guard programmaticSelectionDepth == 0,
-              let pendingSelection, pendingSelection.content == content else { return }
+              let pendingSelection, let selected = pendingSelection.content else { return }
+        if selected != content {
+            // WORKAROUND: iOS 18.6 reports a detached UITab after replacing tabs with the same identifiers.
+            // Accept that completion only when the requested, current tab actually owns selection.
+            guard case .tab(let requestedTab) = selected,
+                  case .tab(let reportedTab) = content,
+                  requestedTab.identifier == reportedTab.identifier,
+                  tabBarController?.tabBarMenuSelectedContent == selected else { return }
+        }
         self.pendingSelection = nil
-        notifySelection(content, previous: pendingSelection.previous)
+        notifySelection(selected, previous: pendingSelection.previous)
     }
 
     func willShowMoreContent(_ viewController: UIViewController, in navigationController: UINavigationController) {
         pendingMoreSelection = nil
         guard programmaticSelectionDepth == 0, let tabBarController,
               !tabBarController.tabBarMenuIsPresentingTransientOverflowContent else { return }
-        guard let content = tabBarController.tabBarMenuContent(for: viewController) else {
+        if tabBarController.tabBarMenuIsMoreList(viewController) {
             if pendingSelection?.content == nil { pendingSelection = nil }
             return
         }
@@ -237,7 +246,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             guard tabBarController.tabBarMenuIsMoreList(from) else { return }
             previous = nil
         }
-        pendingMoreSelection = (viewController, content, previous)
+        pendingMoreSelection = (viewController, previous)
     }
 
     func didShowMoreContent(_ viewController: UIViewController) {
@@ -245,8 +254,20 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         pendingMoreSelection = nil
         guard pending.viewController === viewController,
               let controller = tabBarController,
-              controller.tabBarMenuSelectedContent == pending.content else { return }
-        notifySelection(pending.content, previous: pending.previous)
+              controller.moreNavigationController.topViewController === viewController,
+              let content = controller.tabBarMenuSelectedContent,
+              controller.tabBarMenuIsOverflow(content) else { return }
+        // WORKAROUND: On iOS 18.6, 26.5, and 27.2, UIKit borrows a navigation tab's root
+        // before willShow. Resolve its owner from the completed selection, not containment.
+        notifySelection(content, previous: pending.previous)
+    }
+
+    func forwardUIKitCompletion(_ completion: @escaping @MainActor () -> Void) {
+        if deferredUIKitCompletions != nil {
+            deferredUIKitCompletions?.append(completion)
+        } else {
+            completion()
+        }
     }
 
     func selectFromUser(_ content: TabBarContent) {
@@ -261,6 +282,17 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             guard controller.tabBarItem.isEnabled else { return }
         }
         guard tabBarControllerDelegateProxy?.allowsSelection(of: content, in: tabBarController) ?? true else { return }
+        // Menu actions use programmatic helpers, whose native completion callbacks can
+        // reconfigure the tabs. Deliver the user selection before forwarding those callbacks.
+        let startsCompletionBatch = deferredUIKitCompletions == nil
+        if startsCompletionBatch { deferredUIKitCompletions = [] }
+        defer {
+            if startsCompletionBatch {
+                let completions = deferredUIKitCompletions ?? []
+                deferredUIKitCompletions = nil
+                for completion in completions { completion() }
+            }
+        }
         // Reselection is a notification, not a reconstruction of More's navigation stack.
         if previous != content {
             let didSelect: Bool
@@ -278,7 +310,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         if pendingSelection?.content == nil || pendingSelection?.content == content {
             pendingSelection = nil
         }
-        if pendingMoreSelection?.content == content { pendingMoreSelection = nil }
+        pendingMoreSelection = nil
         let isOverflow = tabBarController.tabBarMenuIsOverflow(content)
         switch content {
         case .tab(let tab):
