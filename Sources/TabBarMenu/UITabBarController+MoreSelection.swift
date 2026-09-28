@@ -463,6 +463,9 @@ extension UITabBarController {
             return false
         }
 
+        // The deferred containment update is too late for the first frame:
+        // More's visible bar would temporarily add its height to the top safe area.
+        moreNavigationController.setNavigationBarHidden(true, animated: false)
         restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
         DispatchQueue.main.async {
             applyPreparedOverflowPresentation()

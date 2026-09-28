@@ -2,6 +2,28 @@ import Testing
 import UIKit
 @testable import TabBarMenu
 
+@Test("Entering a More UITab hides its navigation bar before deferred presentation updates")
+@MainActor
+func enteringMoreTabDoesNotExposeNavigationBar() async {
+    guard #available(iOS 26.0, *) else { return }
+    let context = makeTabBarTestContext(tabCount: 6)
+    let delegate = MoreTabSelectionDelegate()
+    context.controller.menuDelegate = delegate
+    defer { withExtendedLifetime((context, delegate)) {} }
+
+    for _ in 0..<2 {
+        #expect(context.controller.selectTabContent(context.tabs[0]))
+        await drainMainQueue()
+        #expect(context.controller.selectTabContent(context.tabs[5]))
+        let navigation = context.controller.moreNavigationController
+        #expect(navigation.isNavigationBarHidden)
+
+        await drainMainQueue()
+        context.host.window.layoutIfNeeded()
+        #expect(navigation.isNavigationBarHidden)
+    }
+}
+
 @Test(
     "Reselecting an overflow tab after staged tab setup preserves its navigation content",
     arguments: [false, true], [false, true]
