@@ -114,7 +114,7 @@ func nativeTapSelectionNotifications() async throws {
     for _ in 0..<2 {
         let previous = context.controller.selectedTab
         let handler = try #require(context.controller.tabBar.tabBarMenuControlSelectionHandler)
-        #expect(handler(context.controller.tabBar, controls[1]))
+        #expect(handler(context.controller.tabBar, controls[1]) == true)
         #expect(context.controller.delegate?.tabBarController?(context.controller, shouldSelectTab: context.tabs[1]) == true)
         context.controller.selectedTab = context.tabs[1]
         context.controller.delegate?.tabBarController?(context.controller, didSelectTab: context.tabs[1], previousTab: previous)
@@ -172,12 +172,10 @@ func menuActionSelectionPermissions() async {
     UIControl().sendAction(action)
     #expect(delegate.selections.isEmpty)
     permissions.allowsSelection = true
-    if #available(iOS 18.4, *) {
-        tab.isEnabled = false
-        UIControl().sendAction(action)
-        #expect(delegate.selections.isEmpty)
-        tab.isEnabled = true
-    }
+    tab.isEnabled = false
+    UIControl().sendAction(action)
+    #expect(delegate.selections.isEmpty)
+    tab.isEnabled = true
     context.controller.setTabs(Array(context.tabs.prefix(5)), animated: false)
     UIControl().sendAction(action)
     await drainMainQueue()
@@ -234,7 +232,7 @@ func nativeMoreNavigationSelectionNotification() async throws {
     navigationController.setViewControllers([try #require(moreListController(in: navigationController)), target], animated: false)
     #expect(ObjectiveCInterop.performVoidSelector(
         UITabBarControllerRuntimeMethodNames.setSelectedTabBarItem,
-        on: context.controller, with: moreItem
+        on: context.controller, arguments: moreItem
     ))
     navigationController.delegate = navigationDelegate
     navigationDelegate.navigationController?(navigationController, didShow: target, animated: false)
@@ -345,11 +343,11 @@ func nativeMoreNavigationWithNavigationTabs(usesUITab: Bool) async throws {
     navigation.delegate = nil
     #expect(ObjectiveCInterop.performVoidSelector(
         UITabBarControllerRuntimeMethodNames.setSelectedViewControllerAndNotify,
-        on: controller, with: navigation
+        on: controller, arguments: navigation
     ))
     #expect(ObjectiveCInterop.performVoidSelector(
         UITabBarControllerRuntimeMethodNames.setSelectedTabBarItem,
-        on: controller, with: try #require(moreTabBarItem(in: controller))
+        on: controller, arguments: try #require(moreTabBarItem(in: controller))
     ))
     // More removes the root from its original owner before calling willShow.
     owners[5].setViewControllers([], animated: false)

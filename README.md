@@ -11,7 +11,7 @@ common callback for tab selections and reselections.
 
 ## Installation
 
-Requires **iOS 18+** and **Swift 6.2+**.
+Requires **iOS 18.4+** and **Swift 6.3+**.
 
 In Xcode, choose **File → Add Packages…**, enter this repository's URL, and add
 the **TabBarMenu** product to your target.
@@ -65,9 +65,11 @@ as long as it is needed, or use the controller itself as above. Set
 - [API reference](https://lynnswap.github.io/TabBarMenu/documentation/tabbarmenu/)
 - [Migrating from 0.5.x](Sources/TabBarMenu/TabBarMenu.docc/MigratingFrom0_5.md)
 
-To try it, open [TabBarDemo.xcodeproj](Examples/TabBarDemo/TabBarDemo.xcodeproj)
-and run `TabBarDemo`. The demo supports both content APIs: tap active More
-content to reselect it, or long-press More to switch tabs.
+Open [TabBarMenu.xcworkspace](TabBarMenu.xcworkspace) to work with the package,
+demo app, and UIKit test host together. Run the `TabBarDemo` scheme to try the
+demo, or test the package with `TabBarMenuHostedTests` on an iOS Simulator.
+The demo supports both content APIs: tap active More content to reselect it,
+or long-press More to switch tabs.
 
 ## License
 

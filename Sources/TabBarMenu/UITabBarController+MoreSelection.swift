@@ -231,7 +231,7 @@ extension UITabBarController {
         let didForceSelection = ObjectiveCInterop.performVoidSelector(
             UITabBarControllerRuntimeMethodNames.setSelectedViewControllerAndNotify,
             on: self,
-            with: viewController
+            arguments: viewController
         )
         if !didForceSelection || currentSelectedViewControllerInTabBar() !== viewController {
             unsafe selectedViewController = viewController
@@ -240,7 +240,7 @@ extension UITabBarController {
             _ = ObjectiveCInterop.performVoidSelector(
                 UITabBarControllerRuntimeMethodNames.setSelectedViewController,
                 on: self,
-                with: viewController
+                arguments: viewController
             )
         }
         if #available(iOS 26.0, *), let syncedTab {
@@ -375,7 +375,7 @@ extension UITabBarController {
             _ = ObjectiveCInterop.performVoidSelector(
                 UIMoreNavigationControllerRuntimeMethodNames.setDisplayedViewController,
                 on: self.moreNavigationController,
-                with: state.targetViewController
+                arguments: state.targetViewController
             )
             self.disableInteractivePopForUITabOverflow(using: state)
             self.restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
@@ -428,11 +428,11 @@ extension UITabBarController {
                 _ = ObjectiveCInterop.performVoidSelector(
                     UITabBarControllerRuntimeMethodNames.selectTabElementIfPossible,
                     on: self,
-                    with: moreTabElement
+                    arguments: moreTabElement
                 ) || ObjectiveCInterop.performVoidSelector(
                     UITabBarControllerRuntimeMethodNames.setSelectedTab,
                     on: self,
-                    with: moreTabElement
+                    arguments: moreTabElement
                 )
             }
             DispatchQueue.main.async {
@@ -451,11 +451,11 @@ extension UITabBarController {
                 ObjectiveCInterop.performVoidSelector(
                     UITabBarControllerRuntimeMethodNames.selectTabElementIfPossible,
                     on: self,
-                    with: sourceTab
+                    arguments: sourceTab
                 ) || ObjectiveCInterop.performVoidSelector(
                     UITabBarControllerRuntimeMethodNames.setSelectedTab,
                     on: self,
-                    with: sourceTab
+                    arguments: sourceTab
                 )
         }
         if !didSelectTab {
@@ -463,6 +463,9 @@ extension UITabBarController {
             return false
         }
 
+        // The deferred containment update is too late for the first frame:
+        // More's visible bar would temporarily add its height to the top safe area.
+        moreNavigationController.setNavigationBarHidden(true, animated: false)
         restoreMoreTabSelectionIfNeeded(with: syncedMoreItem)
         DispatchQueue.main.async {
             applyPreparedOverflowPresentation()
@@ -476,7 +479,7 @@ extension UITabBarController {
         let didForceSelection = ObjectiveCInterop.performVoidSelector(
             UITabBarControllerRuntimeMethodNames.setSelectedViewControllerAndNotify,
             on: self,
-            with: targetViewController
+            arguments: targetViewController
         )
         if !didForceSelection || currentSelectedViewControllerInTabBar() !== targetViewController {
             unsafe selectedViewController = targetViewController
@@ -485,7 +488,7 @@ extension UITabBarController {
             _ = ObjectiveCInterop.performVoidSelector(
                 UITabBarControllerRuntimeMethodNames.setSelectedViewController,
                 on: self,
-                with: targetViewController
+                arguments: targetViewController
             )
         }
 
@@ -528,8 +531,8 @@ extension UITabBarController {
             didRequestSelection = ObjectiveCInterop.performVoidSelector(
                 UIMoreListControllerRuntimeMethodNames.didSelectRowAtIndexPath,
                 on: moreListController,
-                with: tableView,
-                with: indexPath as NSIndexPath
+                arguments: tableView,
+                indexPath as NSIndexPath
             )
             moreNavigationController.view.layoutIfNeeded()
         }
@@ -708,8 +711,8 @@ extension UITabBarController {
         if ObjectiveCInterop.performVoidSelector(
             UITabBarControllerRuntimeMethodNames.performWithIgnoringSelectionUpdate,
             on: self,
-            bool: true,
-            block: objcBlock
+            arguments: true,
+            objcBlock
         ) {
             return
         }
@@ -717,7 +720,7 @@ extension UITabBarController {
         if ObjectiveCInterop.performVoidSelector(
             UITabBarControllerRuntimeMethodNames.performWithoutNotifyingSelectionChange,
             on: self,
-            block: objcBlock
+            arguments: objcBlock
         ) {
             return
         }
@@ -732,8 +735,8 @@ extension UITabBarController {
         if ObjectiveCInterop.performVoidSelector(
             UITabBarControllerRuntimeMethodNames.setTransientViewControllerAnimated,
             on: self,
-            object: viewController,
-            bool: animated
+            arguments: viewController,
+            animated
         ) {
             return currentTransientViewController() === viewController
         }
@@ -741,7 +744,7 @@ extension UITabBarController {
         if ObjectiveCInterop.performVoidSelector(
             UITabBarControllerRuntimeMethodNames.setTransientViewController,
             on: self,
-            with: viewController
+            arguments: viewController
         ) {
             return currentTransientViewController() === viewController
         }
@@ -794,7 +797,7 @@ extension UITabBarController {
         _ = ObjectiveCInterop.performVoidSelector(
             UITabRuntimeMethodNames.setDisplayedViewControllers,
             on: tab,
-            with: viewControllers as NSArray
+            arguments: viewControllers as NSArray
         )
     }
 
@@ -849,7 +852,7 @@ extension UITabBarController {
         _ = ObjectiveCInterop.performVoidSelector(
             UITabBarControllerRuntimeMethodNames.setSelectedTabBarItem,
             on: self,
-            with: moreItem
+            arguments: moreItem
         )
     }
 
@@ -868,7 +871,7 @@ extension UITabBarController {
         _ = ObjectiveCInterop.performVoidSelector(
             UIMoreNavigationControllerRuntimeMethodNames.setDisplayedViewController,
             on: moreNavigationControllerObject,
-            with: nil
+            arguments: nil as AnyObject?
         )
 
         if ObjectiveCInterop.performVoidSelector(
@@ -884,7 +887,7 @@ extension UITabBarController {
         _ = ObjectiveCInterop.performVoidSelector(
             UIMoreNavigationControllerRuntimeMethodNames.restoreOriginalNavigationControllerIfNecessary,
             on: moreNavigationControllerObject,
-            with: nil
+            arguments: nil as AnyObject?
         )
         if restoringMoreListController {
             restoreMoreListControllerIfNeeded(in: moreNavigationController)
@@ -992,7 +995,7 @@ extension UITabBarController {
         if let preparedViewController = ObjectiveCInterop.performObjectSelector(
             UIMoreNavigationControllerRuntimeMethodNames.preparedViewController,
             on: moreNavigationController,
-            with: viewController
+            arguments: viewController
         ) as? UIViewController {
             return preparedViewController
         }

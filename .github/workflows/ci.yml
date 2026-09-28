@@ -35,9 +35,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
-            xcode_major: '26'
-            allow_prerelease: false
           - runner: macos-26
             xcode_major: '26'
             allow_prerelease: false

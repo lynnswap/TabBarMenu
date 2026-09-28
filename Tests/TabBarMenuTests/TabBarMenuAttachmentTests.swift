@@ -2,6 +2,74 @@ import Testing
 import UIKit
 @testable import TabBarMenu
 
+@Test("layout hooks survive removal of KVO installed before attachment")
+@MainActor
+func layoutHookSurvivesExistingKVORemoval() {
+    let tabBar = LayoutCountingTabBar()
+    let host = StandaloneTabBarHost(tabBar: tabBar)
+    let observation = tabBar.observe(\.frame, options: [.new]) { _, _ in }
+    var completedPasses: [Int] = []
+    tabBar.tabBarMenuLayoutHandler = { _ in completedPasses.append(tabBar.layoutPassCount) }
+    defer { tabBar.tabBarMenuLayoutHandler = nil }
+
+    host.layoutIfNeeded()
+    #expect(completedPasses.last == tabBar.layoutPassCount)
+    let eventCount = completedPasses.count
+    let passCount = tabBar.layoutPassCount
+    observation.invalidate()
+    host.layoutIfNeeded()
+
+    #expect(completedPasses.count > eventCount)
+    #expect(completedPasses.count - eventCount == tabBar.layoutPassCount - passCount)
+    #expect(completedPasses.last == tabBar.layoutPassCount)
+}
+
+@Test("layout hooks remain independent when another tab bar detaches")
+@MainActor
+func layoutHooksRemainIndependentAcrossTabBars() {
+    let first = StandaloneTabBarHost()
+    let second = StandaloneTabBarHost()
+    let firstRecorder = TabBarLayoutRecorder(tabBar: first.tabBar)
+    let secondRecorder = TabBarLayoutRecorder(tabBar: second.tabBar)
+    defer {
+        first.tabBar.tabBarMenuLayoutHandler = nil
+        second.tabBar.tabBarMenuLayoutHandler = nil
+    }
+
+    first.layoutIfNeeded()
+    #expect(!firstRecorder.events.isEmpty)
+    #expect(secondRecorder.events.isEmpty)
+    let firstCount = firstRecorder.events.count
+    first.tabBar.tabBarMenuLayoutHandler = nil
+    first.layoutIfNeeded()
+    second.layoutIfNeeded()
+
+    #expect(firstRecorder.events.count == firstCount)
+    #expect(!secondRecorder.events.isEmpty)
+}
+
+@Test("runtime hook registrations do not retain the tab bar or cleared handlers")
+@MainActor
+func runtimeHooksReleaseTabBarAndHandlers() {
+    weak var releasedTabBar: UITabBar?
+    weak var releasedCapture: NSObject?
+    autoreleasepool {
+        let tabBar = UITabBar()
+        releasedTabBar = tabBar
+        autoreleasepool {
+            let capture = NSObject()
+            releasedCapture = capture
+            tabBar.tabBarMenuLayoutHandler = { _ in _ = capture }
+        }
+        #expect(releasedCapture != nil)
+        tabBar.tabBarMenuLayoutHandler = nil
+        #expect(releasedCapture == nil)
+        tabBar.tabBarMenuSelectionHandler = { _, _ in true }
+        tabBar.tabBarMenuControlSelectionHandler = { _, _ in true }
+    }
+    #expect(releasedTabBar == nil)
+}
+
 @Test("layout handler delivers each layout pass once", arguments: [false, true])
 @MainActor
 func layoutHandlerDeliversEachLayoutPassOnce(observeFrame: Bool) {

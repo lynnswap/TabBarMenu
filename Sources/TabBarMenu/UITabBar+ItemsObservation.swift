@@ -1,130 +1,172 @@
+import ABIBridge
+import OSLog
 import UIKit
-import TabBarMenuObjC
 
 @MainActor
 extension UITabBar {
     typealias TabBarMenuLayoutHandler = (UITabBar) -> Void
     typealias TabBarMenuSelectionHandler = (UITabBar, UITabBarItem) -> Bool
-    typealias TabBarMenuControlSelectionHandler = (UITabBar, UIControl) -> Bool
+    // nil leaves an unresolved control to UIKit's item-based selection path.
+    typealias TabBarMenuControlSelectionHandler = (UITabBar, UIControl) -> Bool?
 
     var tabBarMenuLayoutHandler: TabBarMenuLayoutHandler? {
-        get {
-            ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.layoutHandler)
-        }
+        get { tabBarMenuHooks.layoutHandler }
         set {
-            if newValue != nil {
-                TBMInstallLayoutOverride(self)
-            }
-            ObjectiveCInterop.setAssociatedObject(
-                newValue,
-                for: self,
-                key: &ItemsAssociatedKeys.layoutHandler,
-                policy: .OBJC_ASSOCIATION_COPY_NONATOMIC
-            )
-            TBMSetLayoutHandler(self, newValue)
+            let hooks = tabBarMenuHooks
+            hooks.layoutHandler = newValue
+            hooks.updateLayoutHook(on: self)
         }
     }
 
     var tabBarMenuSelectionHandler: TabBarMenuSelectionHandler? {
-        get {
-            ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.selectionHandler)
-        }
+        get { tabBarMenuHooks.selectionHandler }
         set {
-            if newValue != nil {
-                installSelectionOverrideIfNeeded()
-            }
-            ObjectiveCInterop.setAssociatedObject(
-                newValue,
-                for: self,
-                key: &ItemsAssociatedKeys.selectionHandler,
-                policy: .OBJC_ASSOCIATION_COPY_NONATOMIC
-            )
-            TBMSetSelectionHandler(self, newValue)
+            let hooks = tabBarMenuHooks
+            hooks.selectionHandler = newValue
+            hooks.updateSelectionHooks(on: self)
         }
     }
 
     var tabBarMenuControlSelectionHandler: TabBarMenuControlSelectionHandler? {
-        get {
-            ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.controlSelectionHandler)
-        }
+        get { tabBarMenuHooks.controlSelectionHandler }
         set {
-            if newValue != nil {
-                installSelectionOverrideIfNeeded()
+            let hooks = tabBarMenuHooks
+            hooks.controlSelectionHandler = newValue
+            hooks.updateSelectionHooks(on: self)
+        }
+    }
+
+    var tabBarMenuInstalledSelectionOverrideKind: TabBarMenuSelectionOverrideKind {
+        tabBarMenuHooks.installedSelectionOverrideKind
+    }
+
+    var tabBarMenuPreferredSelectionOverrideKind: TabBarMenuSelectionOverrideKind {
+        get { tabBarMenuHooks.preferredSelectionOverrideKind }
+        set {
+            let hooks = tabBarMenuHooks
+            hooks.preferredSelectionOverrideKind = newValue
+            hooks.itemHook = nil
+            hooks.controlHook = nil
+            hooks.updateSelectionHooks(on: self)
+        }
+    }
+
+    private var tabBarMenuHooks: TabBarMenuHooks {
+        if let hooks: TabBarMenuHooks = ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.hooks) {
+            return hooks
+        }
+        let hooks = TabBarMenuHooks()
+        ObjectiveCInterop.setAssociatedObject(hooks, for: self, key: &ItemsAssociatedKeys.hooks, policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return hooks
+    }
+}
+
+enum TabBarMenuSelectionOverrideKind {
+    case none, didSelectButtonForItem, buttonUp, didSelectButtonForItemAndButtonUp
+}
+
+@MainActor
+private final class TabBarMenuHooks {
+    var layoutHandler: UITabBar.TabBarMenuLayoutHandler?
+    var selectionHandler: UITabBar.TabBarMenuSelectionHandler?
+    var controlSelectionHandler: UITabBar.TabBarMenuControlSelectionHandler?
+    var preferredSelectionOverrideKind: TabBarMenuSelectionOverrideKind = .none
+    var layoutHook: NativeObjCMethodHook?
+    var itemHook: NativeObjCMethodHook?
+    var controlHook: NativeObjCMethodHook?
+    private var bypassItemHook = false
+
+    var installedSelectionOverrideKind: TabBarMenuSelectionOverrideKind {
+        switch (itemHook != nil, controlHook != nil) {
+        case (true, true): .didSelectButtonForItemAndButtonUp
+        case (true, false): .didSelectButtonForItem
+        case (false, true): .buttonUp
+        case (false, false): .none
+        }
+    }
+
+    func updateLayoutHook(on tabBar: UITabBar) {
+        guard layoutHandler != nil else {
+            layoutHook = nil
+            return
+        }
+        guard layoutHook == nil else { return }
+        layoutHook = install(on: tabBar, selector: "layoutSubviews", as: (() -> Void).self) { [weak self, weak tabBar] call in
+            try call.proceed()
+            if let tabBar { self?.layoutHandler?(tabBar) }
+        }
+    }
+
+    func updateSelectionHooks(on tabBar: UITabBar) {
+        guard selectionHandler != nil || controlSelectionHandler != nil else {
+            itemHook = nil
+            controlHook = nil
+            return
+        }
+        if itemHook == nil, preferredSelectionOverrideKind != .buttonUp {
+            itemHook = install(
+                on: tabBar, selector: UITabBarRuntimeMethodNames.didSelectButtonForItem,
+                as: ((AnyObject?) -> Void).self
+            ) { [weak self, weak tabBar] call, item in
+                guard let self, let tabBar else { return try call.proceed(item) }
+                if self.bypassItemHook {
+                    self.bypassItemHook = false
+                } else if let item = item as? UITabBarItem, self.selectionHandler?(tabBar, item) == false {
+                    return
+                }
+                try call.proceed(item)
             }
-            ObjectiveCInterop.setAssociatedObject(
-                newValue,
-                for: self,
-                key: &ItemsAssociatedKeys.controlSelectionHandler,
-                policy: .OBJC_ASSOCIATION_COPY_NONATOMIC
-            )
-            TBMSetControlSelectionDidHandle(self, false)
-            TBMSetControlSelectionHandler(self, newValue)
+        }
+        if controlHook == nil, preferredSelectionOverrideKind != .didSelectButtonForItem {
+            controlHook = install(
+                on: tabBar, selector: UITabBarRuntimeMethodNames.buttonUp,
+                as: ((AnyObject?) -> Void).self
+            ) { [weak self, weak tabBar] call, sender in
+                guard let self, let tabBar,
+                      let control = sender as? UIControl,
+                      let shouldCallDefault = self.controlSelectionHandler?(tabBar, control) else {
+                    return try call.proceed(sender)
+                }
+                guard shouldCallDefault else { return }
+                self.bypassItemHook = true
+                defer { self.bypassItemHook = false }
+                try call.proceed(sender)
+            }
         }
     }
 
-    var tabBarMenuInstalledSelectionOverrideKind: TBMSelectionOverrideKind {
-        get {
-            (ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.selectionOverrideKind) as NSNumber?)
-                .map { TBMSelectionOverrideKind(rawValue: $0.intValue) ?? .none }
-                ?? .none
-        }
-        set {
-            ObjectiveCInterop.setAssociatedObject(
-                NSNumber(value: newValue.rawValue),
-                for: self,
-                key: &ItemsAssociatedKeys.selectionOverrideKind,
-                policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
-
-    var tabBarMenuPreferredSelectionOverrideKind: TBMSelectionOverrideKind {
-        get {
-            (ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.preferredSelectionOverrideKind) as NSNumber?)
-                .map { TBMSelectionOverrideKind(rawValue: $0.intValue) ?? .none }
-                ?? .none
-        }
-        set {
-            ObjectiveCInterop.setAssociatedObject(
-                NSNumber(value: newValue.rawValue),
-                for: self,
-                key: &ItemsAssociatedKeys.preferredSelectionOverrideKind,
-                policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-            tabBarMenuInstalledSelectionOverrideKind = .none
-            TBMSetPreferredSelectionOverrideKind(self, newValue)
-        }
-    }
-
-    private func installSelectionOverrideIfNeeded() {
-        if tabBarMenuInstalledSelectionOverrideKind == .none {
-            let installedKind = TBMInstallSelectionOverride(self)
-            tabBarMenuInstalledSelectionOverrideKind = installedKind
-        }
-    }
-
-    var tabBarMenuControlSelectionDidHandle: Bool {
-        get {
-            (ObjectiveCInterop.associatedObject(for: self, key: &ItemsAssociatedKeys.controlSelectionDidHandle) as NSNumber?)?.boolValue ?? false
-        }
-        set {
-            ObjectiveCInterop.setAssociatedObject(
-                NSNumber(value: newValue),
-                for: self,
-                key: &ItemsAssociatedKeys.controlSelectionDidHandle,
-                policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-            TBMSetControlSelectionDidHandle(self, newValue)
+    @safe
+    private func install<each Argument>(
+        on tabBar: UITabBar,
+        selector: String,
+        as signature: ((repeat each Argument) -> Void).Type,
+        body: @escaping @MainActor @Sendable (NativeObjCMethodInvocation<Void, repeat each Argument>, repeat each Argument) throws -> Void
+    ) -> NativeObjCMethodHook? {
+        guard tabBar.responds(to: NSSelectorFromString(selector)) else { return nil }
+        do {
+            // Swift's dynamic type excludes KVO's temporary subclass. Keep the hook
+            // reachable after observation ends, and filter to this tab bar ourselves.
+            return try unsafe ABIRuntime.shared.hookMainActorMethod(
+                on: type(of: tabBar), selector: selector, as: signature,
+                onFailure: { error in
+                    runtimeHookLogger.error("\(selector, privacy: .public): \(String(describing: error), privacy: .public)")
+                }
+            ) { [weak tabBar] (call: NativeObjCMethodInvocation<Void, repeat each Argument>, arguments: repeat each Argument) in
+                guard let tabBar, try call.receiver === tabBar else {
+                    return try call.proceed(repeat each arguments)
+                }
+                try body(call, repeat each arguments)
+            }
+        } catch {
+            runtimeHookLogger.error("Installing \(selector, privacy: .public): \(String(describing: error), privacy: .public)")
+            return nil
         }
     }
 }
 
+private let runtimeHookLogger = Logger(subsystem: "TabBarMenu", category: "RuntimeHooks")
+
 @MainActor
 private enum ItemsAssociatedKeys {
-    static var layoutHandler = UInt8(0)
-    static var selectionHandler = UInt8(1)
-    static var controlSelectionHandler = UInt8(2)
-    static var selectionOverrideKind = UInt8(3)
-    static var preferredSelectionOverrideKind = UInt8(4)
-    static var controlSelectionDidHandle = UInt8(5)
+    static var hooks = UInt8(0)
 }

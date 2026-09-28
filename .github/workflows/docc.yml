@@ -64,7 +64,7 @@ jobs:
           sdk_path="$(xcrun --sdk iphonesimulator --show-sdk-path)"
           swift package --scratch-path .build/docc-generation \
             --sdk "$sdk_path" \
-            --triple arm64-apple-ios18.0-simulator \
+            --triple arm64-apple-ios18.4-simulator \
             --allow-writing-to-directory .build/docs \
             generate-documentation \
             --target TabBarMenu \

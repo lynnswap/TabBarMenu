@@ -1,3 +1,4 @@
+import ABIBridge
 import Foundation
 import ObjectiveC
 
@@ -21,209 +22,45 @@ package enum ObjectiveCInterop {
         unsafe objc_setAssociatedObject(object, &key, value, policy)
     }
 
-    @safe
-    package static func performObjectSelector(
+    package static func performObjectSelector<each Argument>(
         _ name: String,
-        on object: NSObject
+        on object: NSObject,
+        arguments: repeat each Argument
     ) -> AnyObject? {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return nil
-        }
-        return unsafe object.perform(selector)?.takeUnretainedValue()
+        invoke(name, on: object, returning: AnyObject?.self, arguments: repeat each arguments) ?? nil
     }
 
-    @safe
-    package static func performObjectSelector(
+    package static func performBoolSelector(_ name: String, on object: NSObject) -> Bool? {
+        invoke(name, on: object, returning: Bool.self)
+    }
+
+    package static func performUnsignedIntegerSelector(_ name: String, on object: NSObject) -> UInt? {
+        invoke(name, on: object, returning: UInt.self)
+    }
+
+    package static func performVoidSelector<each Argument>(
         _ name: String,
         on object: NSObject,
-        with argument: AnyObject?
-    ) -> AnyObject? {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return nil
-        }
-        return unsafe object.perform(selector, with: argument)?.takeUnretainedValue()
-    }
-
-    @safe
-    package static func performObjectSelector(
-        _ name: String,
-        on object: NSObject,
-        with firstArgument: AnyObject?,
-        with secondArgument: AnyObject?,
-        with thirdArgument: AnyObject?
-    ) -> AnyObject? {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return nil
-        }
-
-        typealias Function = @convention(c) (
-            AnyObject,
-            Selector,
-            AnyObject?,
-            AnyObject?,
-            AnyObject?
-        ) -> Unmanaged<AnyObject>?
-        let implementation = unsafe unsafeBitCast(
-            object.method(for: selector),
-            to: Function.self
-        )
-        return unsafe implementation(object, selector, firstArgument, secondArgument, thirdArgument)?
-            .takeUnretainedValue()
-    }
-
-    @safe
-    package static func performBoolSelector(
-        _ name: String,
-        on object: NSObject
-    ) -> Bool? {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return nil
-        }
-
-        typealias Function = @convention(c) (AnyObject, Selector) -> Bool
-        let implementation = unsafe unsafeBitCast(
-            object.method(for: selector),
-            to: Function.self
-        )
-        return implementation(object, selector)
-    }
-
-    @safe
-    package static func performUnsignedIntegerSelector(
-        _ name: String,
-        on object: NSObject
-    ) -> UInt? {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return nil
-        }
-
-        typealias Function = @convention(c) (AnyObject, Selector) -> UInt
-        let implementation = unsafe unsafeBitCast(
-            object.method(for: selector),
-            to: Function.self
-        )
-        return implementation(object, selector)
-    }
-
-    @safe
-    package static func performVoidSelector(
-        _ name: String,
-        on object: NSObject
+        arguments: repeat each Argument
     ) -> Bool {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return false
-        }
-        unsafe _ = object.perform(selector)
-        return true
+        invoke(name, on: object, returning: Void.self, arguments: repeat each arguments) != nil
     }
 
     @safe
-    package static func performVoidSelector(
+    private static func invoke<Result, each Argument>(
         _ name: String,
         on object: NSObject,
-        with argument: AnyObject?
-    ) -> Bool {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return false
-        }
-        unsafe _ = object.perform(selector, with: argument)
-        return true
-    }
-
-    @safe
-    package static func performVoidSelector(
-        _ name: String,
-        on object: NSObject,
-        with firstArgument: AnyObject?,
-        with secondArgument: AnyObject?
-    ) -> Bool {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return false
-        }
-
-        typealias Function = @convention(c) (
-            AnyObject,
-            Selector,
-            AnyObject?,
-            AnyObject?
-        ) -> Void
-        let implementation = unsafe unsafeBitCast(
-            object.method(for: selector),
-            to: Function.self
-        )
-        implementation(object, selector, firstArgument, secondArgument)
-        return true
-    }
-
-    @safe
-    package static func performVoidSelector(
-        _ name: String,
-        on object: NSObject,
-        object argument: AnyObject?,
-        bool flag: Bool
-    ) -> Bool {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return false
-        }
-
-        typealias Function = @convention(c) (AnyObject, Selector, AnyObject?, Bool) -> Void
-        let implementation = unsafe unsafeBitCast(
-            object.method(for: selector),
-            to: Function.self
-        )
-        implementation(object, selector, argument, flag)
-        return true
-    }
-
-    @safe
-    package static func performVoidSelector(
-        _ name: String,
-        on object: NSObject,
-        block: @escaping @convention(block) () -> Void
-    ) -> Bool {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return false
-        }
-
-        typealias Function = @convention(c) (AnyObject, Selector, AnyObject) -> Void
-        let implementation = unsafe unsafeBitCast(
-            object.method(for: selector),
-            to: Function.self
-        )
-        let blockObject = unsafe unsafeBitCast(block, to: AnyObject.self)
-        implementation(object, selector, blockObject)
-        return true
-    }
-
-    @safe
-    package static func performVoidSelector(
-        _ name: String,
-        on object: NSObject,
-        bool flag: Bool,
-        block: @escaping @convention(block) () -> Void
-    ) -> Bool {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector) else {
-            return false
-        }
-
-        typealias Function = @convention(c) (AnyObject, Selector, Bool, AnyObject) -> Void
-        let implementation = unsafe unsafeBitCast(
-            object.method(for: selector),
-            to: Function.self
-        )
-        let blockObject = unsafe unsafeBitCast(block, to: AnyObject.self)
-        implementation(object, selector, flag, blockObject)
-        return true
+        returning: Result.Type,
+        arguments: repeat each Argument
+    ) -> Result? {
+        // Signature lookup can find methods a receiver deliberately hides from
+        // optional-selector clients through responds(to:).
+        guard object.responds(to: NSSelectorFromString(name)) else { return nil }
+        // A missing or incompatible private selector is an unavailable operation.
+        guard let method = try? ABIRuntime.shared.object(object).method(
+            selector: name,
+            as: ((repeat each Argument) -> Result).self
+        ) else { return nil }
+        return try? unsafe method.unsafeInvoke(repeat each arguments)
     }
 }

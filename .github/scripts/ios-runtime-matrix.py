@@ -22,7 +22,7 @@ def supported_runtimes(runtimes):
         if not runtime.get("isAvailable", False):
             continue
         version = version_components(runtime["version"])
-        if version[0] not in {18, 26, 27} or (26, 0, 0) <= version < (26, 1, 0):
+        if version[0] not in {18, 26, 27} or version < (18, 4, 0) or (26, 0, 0) <= version < (26, 1, 0):
             continue
         selected[runtime["identifier"]] = runtime
     return sorted(selected.values(), key=lambda runtime: version_components(runtime["version"]))
@@ -30,7 +30,7 @@ def supported_runtimes(runtimes):
 
 def test_matrix(runtimes):
     if not runtimes:
-        raise ValueError("No available iOS 18.x, 26.1+, or 27.x runtime is installed.")
+        raise ValueError("No available iOS 18.4+, 26.1+, or 27.x runtime is installed.")
     return {"include": [
         {"runtime": runtime["identifier"], "version": runtime["version"]}
         for runtime in runtimes
