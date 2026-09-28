@@ -141,13 +141,11 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
                     .first(where: { $0.0 == index })?.1 else { return true }
             return self.handleInteraction(.tap, at: index, sourceView: sourceView)
         }
-        tabBar.tabBarMenuControlSelectionHandler = { [weak self, weak tabBarController] tabBar, control in
+        tabBar.tabBarMenuControlSelectionHandler = { [weak self, weak tabBarController] _, control in
             guard let self, let tabBarController,
                   let index = self.resolvedTabIndex(for: control, in: tabBarController) else {
-                tabBar.tabBarMenuControlSelectionDidHandle = false
-                return true
+                return nil
             }
-            tabBar.tabBarMenuControlSelectionDidHandle = true
             return self.handleInteraction(.tap, at: index, sourceView: control)
         }
     }
@@ -280,7 +278,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         let previous = tabBarController.tabBarMenuSelectedContent
         switch content {
         case .tab(let tab):
-            if #available(iOS 18.4, *), !tab.isEnabled { return }
+            if !tab.isEnabled { return }
         case .viewController(let controller):
             guard controller.tabBarItem.isEnabled else { return }
         }

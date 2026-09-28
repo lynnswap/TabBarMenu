@@ -490,7 +490,6 @@ func nilMorePreparationPreservesOverflowContent() async throws {
     let handler = try #require(context.controller.tabBar.tabBarMenuControlSelectionHandler)
 
     #expect(handler(context.controller.tabBar, control) == false)
-    #expect(context.controller.tabBar.tabBarMenuControlSelectionDidHandle)
     #expect(context.controller.tabBarMenuSelectedTab === tab)
     #expect(navigationStack(of: context.controller.moreNavigationController).map(ObjectIdentifier.init) == originalStack.map(ObjectIdentifier.init))
     #expect(displayedViewControllers(in: tab).map(ObjectIdentifier.init) == originalDisplayed.map(ObjectIdentifier.init))

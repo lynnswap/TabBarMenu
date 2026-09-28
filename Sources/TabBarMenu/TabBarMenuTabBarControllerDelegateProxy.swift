@@ -61,9 +61,9 @@ final class TabBarMenuTabBarControllerDelegateProxy: NSObject, UITabBarControlle
            let originalResult = ObjectiveCInterop.performObjectSelector(
                UITabBarControllerDelegateRuntimeMethodNames.displayedViewControllersForTab,
                on: originalDelegate,
-               with: tabBarController,
-               with: tab,
-               with: proposedViewControllers as NSArray
+               arguments: tabBarController,
+               tab,
+               proposedViewControllers as NSArray
            ) as? [UIViewController] {
             return originalResult
         }

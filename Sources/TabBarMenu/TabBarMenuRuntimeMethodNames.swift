@@ -159,6 +159,10 @@ package enum UITabBarItemRuntimeMethods {
 }
 
 package enum UITabBarRuntimeMethodNames {
+    package static let didSelectButtonForItem: String = {
+        ["Item:", "For", "Button", "Select", "did", "_"].runtimeMethodName
+    }()
+
     package static let buttonUp: String = {
         ["Up:", "button", "_"].runtimeMethodName
     }()

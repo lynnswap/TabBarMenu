@@ -61,7 +61,7 @@ jobs:
           xcodebuild -version
           echo "Testing iOS $RESOLVED_IOS_VERSION on $DESTINATION"
           xcodebuild test \
-            -project Tests/TabBarMenuTestHost/TabBarMenuTestHost.xcodeproj \
+            -workspace TabBarMenu.xcworkspace \
             -scheme TabBarMenuHostedTests \
             -destination "$DESTINATION" \
             -enableCodeCoverage NO \

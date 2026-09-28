@@ -530,7 +530,7 @@ func setDisplayedViewController(
     _ = ObjectiveCInterop.performVoidSelector(
         UIMoreNavigationControllerRuntimeMethodNames.setDisplayedViewController,
         on: navigationController,
-        with: viewController
+        arguments: viewController
     )
 }
 

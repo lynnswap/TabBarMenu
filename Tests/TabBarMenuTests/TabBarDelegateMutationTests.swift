@@ -108,7 +108,7 @@ private struct DelegateMutationContext {
     func tap(at index: Int) throws {
         let control = tabBarOrderedControls(in: controller.tabBar)[index]
         let handler = try #require(controller.tabBar.tabBarMenuControlSelectionHandler)
-        #expect(handler(controller.tabBar, control))
+        #expect(handler(controller.tabBar, control) == true)
         let delegate = try #require(controller.delegate as? TabBarMenuTabBarControllerDelegateProxy)
         let recipient = try #require(delegate.originalDelegate as? MutationUIKitDelegate)
         if usesUITab {
@@ -360,11 +360,11 @@ func forwardedMoreDelegateMutatesSelection(usesUITab: Bool, replacesContent: Boo
     navigation.setViewControllers([try #require(moreListController(in: navigation)), target], animated: false)
     #expect(ObjectiveCInterop.performVoidSelector(
         UITabBarControllerRuntimeMethodNames.setSelectedViewControllerAndNotify,
-        on: context.controller, with: navigation
+        on: context.controller, arguments: navigation
     ))
     #expect(ObjectiveCInterop.performVoidSelector(
         UITabBarControllerRuntimeMethodNames.setSelectedTabBarItem,
-        on: context.controller, with: try #require(moreTabBarItem(in: context.controller))
+        on: context.controller, arguments: try #require(moreTabBarItem(in: context.controller))
     ))
     setDisplayedViewController(target, in: navigation)
     coordinator.endProgrammaticSelection()
@@ -400,7 +400,7 @@ func detachDuringPreparation(usesUITab: Bool) throws {
     context.controller.menuDelegate = menuDelegate
     menuDelegate.prepare = { $0.menuDelegate = nil }
     let handler = try #require(context.controller.tabBar.tabBarMenuControlSelectionHandler)
-    #expect(handler(context.controller.tabBar, tabBarOrderedControls(in: context.controller.tabBar)[1]))
+    #expect(handler(context.controller.tabBar, tabBarOrderedControls(in: context.controller.tabBar)[1]) == true)
     #expect(context.controller.menuDelegate == nil)
     #expect(context.controller.delegate === original)
     #expect(menuDelegate.selections.isEmpty)
@@ -466,7 +466,7 @@ func detachedNativeTabCompletion() throws {
     context.controller.menuDelegate = menuDelegate
     #expect(context.controller.selectTabContent(currentTabs[0]))
     let handler = try #require(context.controller.tabBar.tabBarMenuControlSelectionHandler)
-    #expect(handler(context.controller.tabBar, tabBarOrderedControls(in: context.controller.tabBar)[0]))
+    #expect(handler(context.controller.tabBar, tabBarOrderedControls(in: context.controller.tabBar)[0]) == true)
     let proxy = try #require(context.controller.delegate as? TabBarMenuTabBarControllerDelegateProxy)
     proxy.tabBarController(context.controller, didSelectTab: staleTab, previousTab: staleTab)
     #expect(menuDelegate.selections.count == 1)

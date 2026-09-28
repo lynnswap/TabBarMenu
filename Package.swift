@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.3
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -12,7 +12,7 @@ let strictSwiftSettings: [SwiftSetting] = [
 let package = Package(
     name: "TabBarMenu",
     platforms: [
-        .iOS(.v18)
+        .iOS("18.4")
     ],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
@@ -26,6 +26,7 @@ let package = Package(
         ),
     ],
     dependencies: [
+        .package(url: "https://github.com/lynnswap/ABIBridge", from: "0.4.0"),
         .package(
             url: "https://github.com/swiftlang/swift-docc-plugin",
             from: "1.5.0"
@@ -35,12 +36,8 @@ let package = Package(
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "TabBarMenuObjC",
-            publicHeadersPath: "include"
-        ),
-        .target(
             name: "TabBarMenu",
-            dependencies: ["TabBarMenuObjC"],
+            dependencies: [.product(name: "ABIBridge", package: "ABIBridge")],
             swiftSettings: strictSwiftSettings
         ),
         .target(

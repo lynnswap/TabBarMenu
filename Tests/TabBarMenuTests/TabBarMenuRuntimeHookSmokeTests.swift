@@ -2,6 +2,26 @@ import Testing
 import UIKit
 @testable import TabBarMenu
 
+@Test("selection hook survives removing observation created before attachment")
+@MainActor
+func selectionHookSurvivesExistingKVORemoval() async {
+    let context = makeTabBarTestContext(tabCount: 6)
+    let observation = context.controller.tabBar.observe(\.frame, options: [.new]) { _, _ in }
+    let delegate = MoreTabMenuDelegate(menu: UIMenu(children: []))
+    context.controller.menuDelegate = delegate
+    context.host.window.layoutIfNeeded()
+    observation.invalidate()
+
+    let control = moreTabBarControl(in: context.controller)
+    #expect(control != nil)
+    if let control {
+        invokeRuntimeMethodNamed(UITabBarRuntimeMethodNames.buttonUp, on: context.controller.tabBar, argument: control)
+    }
+    #expect(delegate.requestedTabsCount == 1)
+    context.controller.menuDelegate = nil
+    #expect(context.controller.tabBar.tabBarMenuInstalledSelectionOverrideKind == .none)
+}
+
 @Test("selection override installs an available runtime path")
 @MainActor
 func selectionOverrideInstallsAvailableRuntimePath() async {

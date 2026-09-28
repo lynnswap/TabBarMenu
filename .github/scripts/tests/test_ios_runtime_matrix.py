@@ -26,17 +26,17 @@ class RuntimeMatrixTests(unittest.TestCase):
     def test_every_supported_minor_and_patch_version_is_selected_in_version_order(self):
         installed = [runtime(version) for version in (
             "27.2", "18.6", "26.4.1", "18.0", "26.2", "27.0", "26.0", "27.10",
-            "26.0.1", "26.1", "26.0.2", "26.1.1",
+            "26.0.1", "26.1", "26.0.2", "26.1.1", "18.3.2", "18.4", "18.4.1",
         )]
         jobs = matrix.test_matrix(matrix.supported_runtimes(installed))["include"]
         self.assertEqual(
             [job["version"] for job in jobs],
-            ["18.0", "18.6", "26.1", "26.1.1", "26.2", "26.4.1", "27.0", "27.2", "27.10"],
+            ["18.4", "18.4.1", "18.6", "26.1", "26.1.1", "26.2", "26.4.1", "27.0", "27.2", "27.10"],
         )
 
     def test_unavailable_runtimes_other_platforms_and_other_majors_are_excluded(self):
         installed = [
-            runtime("17.5"), runtime("18.0"), runtime("27.2", available=False),
+            runtime("17.5"), runtime("18.4"), runtime("27.2", available=False),
             runtime("26.0", platform="tvOS"), runtime("28.0"),
         ]
         self.assertEqual(matrix.supported_runtimes(installed), [installed[1]])
@@ -47,9 +47,9 @@ class RuntimeMatrixTests(unittest.TestCase):
         self.assertEqual(jobs, [{"runtime": installed[0]["identifier"], "version": "27.0"}])
 
     def test_runtime_identifier_is_preserved_when_version_contains_a_patch(self):
-        installed = runtime("18.3.1", identifier="com.apple.CoreSimulator.SimRuntime.iOS-18-3")
+        installed = runtime("18.4.1", identifier="com.apple.CoreSimulator.SimRuntime.iOS-18-4")
         jobs = matrix.test_matrix(matrix.supported_runtimes([installed]))["include"]
-        self.assertEqual(jobs, [{"runtime": installed["identifier"], "version": "18.3.1"}])
+        self.assertEqual(jobs, [{"runtime": installed["identifier"], "version": "18.4.1"}])
 
     def test_no_supported_runtime_fails_instead_of_skipping_all_tests(self):
         with self.assertRaisesRegex(ValueError, "No available iOS"):
@@ -68,7 +68,7 @@ class RuntimeMatrixTests(unittest.TestCase):
         self.assertEqual(json.loads(value), matrix.test_matrix(installed))
 
     def test_resolution_creates_a_phone_for_the_exact_runtime(self):
-        installed = runtime("18.3.1", identifier="com.apple.CoreSimulator.SimRuntime.iOS-18-3")
+        installed = runtime("18.4.1", identifier="com.apple.CoreSimulator.SimRuntime.iOS-18-4")
         installed["supportedDeviceTypes"] = [
             {"identifier": "tablet", "productFamily": "iPad"},
             {"identifier": "phone", "productFamily": "iPhone"},
@@ -85,7 +85,7 @@ class RuntimeMatrixTests(unittest.TestCase):
                          ("create", "TabBarMenu CI", "phone", installed["identifier"]))
         self.assertEqual(values, {
             "DESTINATION": "platform=iOS Simulator,id=fresh-udid",
-            "RESOLVED_IOS_VERSION": "18.3.1",
+            "RESOLVED_IOS_VERSION": "18.4.1",
             "SIMULATOR_UDID": "fresh-udid",
         })
 
