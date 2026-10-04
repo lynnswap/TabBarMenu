@@ -31,10 +31,10 @@ struct ObjectiveCInteropTests {
         receiver.number = 42
         #expect(ObjectiveCInterop.performUnsignedIntegerSelector("number", on: receiver) == 42)
 
-        let original = try #require(unsafe class_getInstanceMethod(
+        let original = try unsafe #require(class_getInstanceMethod(
             ObjectiveCInteropReceiver.self, #selector(getter: ObjectiveCInteropReceiver.number)
         ))
-        let replacement = try #require(unsafe class_getInstanceMethod(
+        let replacement = try unsafe #require(class_getInstanceMethod(
             ObjectiveCInteropReceiver.self, #selector(ObjectiveCInteropReceiver.replacementNumber)
         ))
         unsafe method_exchangeImplementations(original, replacement)
@@ -92,6 +92,89 @@ private final class ObjectiveCInteropReceiver: NSObject {
         if selector == #selector(getter: ObjectiveCInteropReceiver.number) {
             return exposesNumber
         }
+        return super.responds(to: selector)
+    }
+}
+
+
+@Test("Objective-C interop preserves object identity and optional nil results")
+@MainActor
+func objectiveCInteropPreservesObjectResults() {
+    let receiver = InteropReceiver()
+    let value = NSObject()
+
+    #expect(ObjectiveCInterop.performObjectSelector("echo:", on: receiver, arguments: value) === value)
+    #expect(ObjectiveCInterop.performObjectSelector("echo:", on: receiver, arguments: Optional<NSObject>.none) == nil)
+}
+
+@Test("Objective-C interop decodes Boolean and unsigned integer results")
+@MainActor
+func objectiveCInteropPreservesScalarResults() {
+    let receiver = InteropReceiver()
+
+    #expect(ObjectiveCInterop.performBoolSelector("booleanValue", on: receiver) == true)
+    #expect(ObjectiveCInterop.performUnsignedIntegerSelector("unsignedValue", on: receiver) == UInt.max)
+}
+
+@Test("Objective-C interop forwards mixed arguments and reports void completion")
+@MainActor
+func objectiveCInteropForwardsMixedArguments() {
+    let receiver = InteropReceiver()
+    let value = NSObject()
+
+    #expect(ObjectiveCInterop.performVoidSelector(
+        "record:animated:count:", on: receiver, arguments: value, true, UInt.max
+    ))
+    #expect(receiver.recordedObject === value)
+    #expect(receiver.recordedAnimated == true)
+    #expect(receiver.recordedCount == UInt.max)
+
+    #expect(ObjectiveCInterop.performVoidSelector(
+        "record:animated:count:", on: receiver, arguments: Optional<NSObject>.none, false, UInt(0)
+    ))
+    #expect(receiver.recordedObject == nil)
+    #expect(receiver.recordedAnimated == false)
+    #expect(receiver.recordedCount == 0)
+}
+
+@Test("Unavailable Objective-C selectors preserve fallback without invoking native code")
+@MainActor
+func objectiveCInteropPreservesUnavailableOperations() {
+    let receiver = InteropReceiver()
+
+    #expect(ObjectiveCInterop.performObjectSelector("missingObject", on: receiver) == nil)
+    #expect(ObjectiveCInterop.performVoidSelector("missingOperation", on: receiver) == false)
+    #expect(ObjectiveCInterop.performObjectSelector("hiddenObject", on: receiver) == nil)
+    #expect(receiver.hiddenObjectWasInvoked == false)
+    #expect(ObjectiveCInterop.performBoolSelector("unsignedValue", on: receiver) == nil)
+    #expect(ObjectiveCInterop.performVoidSelector("record:animated:count:", on: receiver) == false)
+    #expect(receiver.recordedCount == nil)
+}
+
+@MainActor
+private final class InteropReceiver: NSObject {
+    var recordedObject: NSObject?
+    var recordedAnimated: Bool?
+    var recordedCount: UInt?
+    var hiddenObjectWasInvoked = false
+
+    @objc func echo(_ value: NSObject?) -> NSObject? { value }
+    @objc var booleanValue: Bool { true }
+    @objc var unsignedValue: UInt { UInt.max }
+
+    @objc func record(_ value: NSObject?, animated: Bool, count: UInt) {
+        recordedObject = value
+        recordedAnimated = animated
+        recordedCount = count
+    }
+
+    @objc func hiddenObject() -> NSObject {
+        hiddenObjectWasInvoked = true
+        return NSObject()
+    }
+
+    override func responds(to selector: Selector!) -> Bool {
+        if selector == NSSelectorFromString("hiddenObject") { return false }
         return super.responds(to: selector)
     }
 }
