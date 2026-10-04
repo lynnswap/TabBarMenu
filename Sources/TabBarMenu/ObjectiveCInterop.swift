@@ -4,6 +4,14 @@ import ObjectiveC
 
 @MainActor
 package enum ObjectiveCInterop {
+    private struct MethodKey: Hashable {
+        let receiverClass: ObjectIdentifier
+        let selector: String
+        let signature: ObjectIdentifier
+    }
+
+    private static var preparedMethods: [MethodKey: Any] = [:]
+
     @safe
     package static func associatedObject<Value>(
         for object: AnyObject,
@@ -55,12 +63,28 @@ package enum ObjectiveCInterop {
     ) -> Result? {
         // Signature lookup can find methods a receiver deliberately hides from
         // optional-selector clients through responds(to:).
-        guard object.responds(to: NSSelectorFromString(name)) else { return nil }
+        let selector = NSSelectorFromString(name)
+        guard object.responds(to: selector) else { return nil }
+        // KVO changes the runtime class without changing Swift's dynamic type.
+        let receiverClass: AnyClass = object_getClass(object)!
+        let signature = ((repeat each Argument) -> Result).self
+        let key = MethodKey(
+            receiverClass: ObjectIdentifier(receiverClass),
+            selector: name,
+            signature: ObjectIdentifier(signature)
+        )
+        if let method = preparedMethods[key] as? NativeObjCMethod<Result, repeat each Argument> {
+            return try? unsafe method.unsafeInvoke(on: object, repeat each arguments)
+        }
         // A missing or incompatible private selector is an unavailable operation.
         guard let method = try? ABIRuntime.shared.object(object).method(
-            selector: name,
-            as: ((repeat each Argument) -> Result).self
+            selector: selector,
+            as: signature
         ) else { return nil }
+        // Forwarding signatures can depend on the receiver; only share class-declared methods.
+        if unsafe class_getInstanceMethod(receiverClass, selector) != nil {
+            preparedMethods[key] = method.method
+        }
         return try? unsafe method.unsafeInvoke(repeat each arguments)
     }
 }
