@@ -13,7 +13,7 @@ delegate's `didSelect` callback to handle selections and reselections, including
 content displayed through More.
 
 See <doc:UsingTabBarMenu> for interaction rules, selection handling, and
-presentation options, or <doc:MigratingFrom0_5> to update an existing integration.
+presentation options.
 
 > Important: TabBarMenu relies on undocumented UIKit APIs and runtime behavior.
 > Evaluate that constraint before using it in an App Store-bound app.
@@ -23,7 +23,6 @@ presentation options, or <doc:MigratingFrom0_5> to update an existing integratio
 ### Guides
 
 - <doc:UsingTabBarMenu>
-- <doc:MigratingFrom0_5>
 
 ### Preparing Interactions
 

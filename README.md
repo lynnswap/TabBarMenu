@@ -63,7 +63,7 @@ as long as it is needed, or use the controller itself as above. Set
 - [Usage guide](Sources/TabBarMenu/TabBarMenu.docc/UsingTabBarMenu.md) — regular-tab menus,
   selection callbacks, classic view-controller tab bars, and presentation options.
 - [API reference](https://lynnswap.github.io/TabBarMenu/documentation/tabbarmenu/)
-- [Migrating from 0.5.x](Sources/TabBarMenu/TabBarMenu.docc/MigratingFrom0_5.md)
+- [Migrating from 0.5.x](Docs/Migrations/MigratingFrom0_5.md)
 
 Open [TabBarMenu.xcworkspace](TabBarMenu.xcworkspace) to work with the package,
 demo app, and UIKit test host together. Run the `TabBarDemo` scheme to try the
