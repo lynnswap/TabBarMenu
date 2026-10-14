@@ -77,7 +77,7 @@ package enum ObjectiveCInterop {
             return try? unsafe method.unsafeInvoke(on: object, repeat each arguments)
         }
         // A missing or incompatible private selector is an unavailable operation.
-        guard let method = try? ABIRuntime.shared.object(object).method(
+        guard let method = try? ABIRuntime.shared.object(object).resolveMethodAndWait(
             selector: selector,
             as: signature
         ) else { return nil }
