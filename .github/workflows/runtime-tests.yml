@@ -53,17 +53,29 @@ jobs:
         env:
           RUNTIME_ID: ${{ matrix.runtime }}
         run: python3 .github/scripts/ios-runtime-matrix.py resolve --runtime "$RUNTIME_ID"
-      - name: Boot the Simulator
-        run: xcrun simctl bootstatus "$SIMULATOR_UDID" -b
-      - name: Run package tests
+      - name: Start the Simulator
+        run: xcrun simctl boot "$SIMULATOR_UDID"
+      - name: Build package tests
         run: |
           set -e -o pipefail
           xcodebuild -version
+          xcodebuild build-for-testing \
+            -workspace TabBarMenu.xcworkspace \
+            -scheme TabBarMenuHostedTests \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -enableCodeCoverage NO \
+            | tee "$RUNNER_TEMP/build.log"
+      - name: Run package tests
+        run: |
+          set -e -o pipefail
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
           echo "Testing iOS $RESOLVED_IOS_VERSION on $DESTINATION"
-          xcodebuild test \
+          xcodebuild test-without-building \
             -workspace TabBarMenu.xcworkspace \
             -scheme TabBarMenuHostedTests \
             -destination "$DESTINATION" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -enableCodeCoverage NO \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
@@ -78,6 +90,7 @@ jobs:
         with:
           name: tests-${{ inputs.runner }}-iOS-${{ matrix.version }}
           path: |
+            ${{ runner.temp }}/build.log
             ${{ runner.temp }}/tests.log
             ${{ runner.temp }}/tests.xcresult
           if-no-files-found: ignore
