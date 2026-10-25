@@ -146,8 +146,8 @@ private final class TabBarMenuHooks {
         do {
             // Swift's dynamic type excludes KVO's temporary subclass. Keep the hook
             // reachable after observation ends, and filter to this tab bar ourselves.
-            return try unsafe ABIRuntime.shared.hookMainActorMethod(
-                on: type(of: tabBar), selector: selector, as: signature,
+            return try unsafe ABIRuntime.shared.hookMainActorCalls(
+                .objc(.method(selector, as: signature)), on: type(of: tabBar),
                 onFailure: { error in
                     runtimeHookLogger.error("\(selector, privacy: .public): \(String(describing: error), privacy: .public)")
                 }

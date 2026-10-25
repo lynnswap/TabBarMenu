@@ -1,13 +1,13 @@
 {
-  "originHash" : "10ca08c9710be394b436129aafbe33f9173f5a3d80947ced9290bbb3cfe8b453",
+  "originHash" : "aff159f9349b39974a18c6a650ff6eb5047995c1528a80783bd59ed4f02d1976",
   "pins" : [
     {
       "identity" : "abibridge",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/lynnswap/ABIBridge",
       "state" : {
-        "revision" : "600b7762c41e351532c6021701a2cacaf0f0046a",
-        "version" : "0.12.1"
+        "revision" : "df6a28f070d09d46da66a73418173aed1f91605a",
+        "version" : "0.13.0"
       }
     },
     {
