@@ -402,12 +402,12 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     }
 
     private func removeMenuGestures(from tabBar: UITabBar) {
-        for control in tabBarControls(in: tabBar) {
-            guard let recognizers = control.gestureRecognizers else {
+        for view in tabBarItemAndControlViews(in: tabBar) {
+            guard let recognizers = view.gestureRecognizers else {
                 continue
             }
             for recognizer in recognizers where recognizer is TabBarMenuLongPressGestureRecognizer {
-                control.removeGestureRecognizer(recognizer)
+                view.removeGestureRecognizer(recognizer)
             }
         }
     }
@@ -460,14 +460,14 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     private func menuRecognizersByView(in tabBar: UITabBar) -> [ObjectIdentifier: [TabBarMenuLongPressGestureRecognizer]] {
         var recognizersByView: [ObjectIdentifier: [TabBarMenuLongPressGestureRecognizer]] = [:]
 
-        for control in tabBarControls(in: tabBar) {
-            let recognizers = (control.gestureRecognizers ?? []).compactMap { recognizer in
+        for view in tabBarItemAndControlViews(in: tabBar) {
+            let recognizers = (view.gestureRecognizers ?? []).compactMap { recognizer in
                 recognizer as? TabBarMenuLongPressGestureRecognizer
             }
             guard !recognizers.isEmpty else {
                 continue
             }
-            recognizersByView[ObjectIdentifier(control)] = recognizers
+            recognizersByView[ObjectIdentifier(view)] = recognizers
         }
 
         return recognizersByView
@@ -536,7 +536,17 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         return result
     }
 
-    private func tabBarIndexedViews(in tabBar: UITabBar) -> [(Int, UIView)] {
+    private func tabBarItemAndControlViews(in tabBar: UITabBar) -> [UIView] {
+        // UIKit can host item views outside the tab bar's own subtree.
+        var views = tabBar.items?.compactMap { tabBarItemView($0) } ?? []
+        var identities = Set(views.map(ObjectIdentifier.init))
+        for control in tabBarControls(in: tabBar) where identities.insert(ObjectIdentifier(control)).inserted {
+            views.append(control)
+        }
+        return views
+    }
+
+    func tabBarIndexedViews(in tabBar: UITabBar) -> [(Int, UIView)] {
         guard let items = tabBar.items, !items.isEmpty else {
             return []
         }

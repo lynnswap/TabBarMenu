@@ -237,19 +237,6 @@ func makeViewControllers(count: Int) -> [UIViewController] {
 }
 
 @MainActor
-func makeViewControllersWithNoViewItems(count: Int) -> [UIViewController] {
-    (0..<count).map { index in
-        let controller = makeContentViewController(
-            title: "View \(index)",
-            itemTitle: "Item \(index)",
-            tag: index
-        )
-        controller.tabBarItem = NoViewTabBarItem(title: "Item \(index)", image: nil, tag: index)
-        return controller
-    }
-}
-
-@MainActor
 func makeContentViewController(
     title: String,
     itemTitle: String,
@@ -408,17 +395,6 @@ func menuRecognizerIdentitySet(in tabBar: UITabBar) -> Set<ObjectIdentifier> {
 @MainActor
 func menuLongPressDurationsByIndex(in tabBar: UITabBar) -> [Int: TimeInterval] {
     Dictionary(uniqueKeysWithValues: menuLongPressRecognizers(in: tabBar).map { ($0.tabIndex, $0.minimumPressDuration) })
-}
-@MainActor
-func menuRecognizerMinXAndIndices(in tabBar: UITabBar) -> [(minX: CGFloat, index: Int)] {
-    let controls = tabBarItemAndControlViews(in: tabBar)
-    return controls.compactMap { control in
-        guard let recognizer = (control.gestureRecognizers ?? []).compactMap({ $0 as? TabBarMenuLongPressGestureRecognizer }).first else {
-            return nil
-        }
-        let frame = control.convert(control.bounds, to: tabBar)
-        return (frame.minX, recognizer.tabIndex)
-    }
 }
 @MainActor
 func moreTabBarItem(in tabBarController: UITabBarController) -> UITabBarItem? {
