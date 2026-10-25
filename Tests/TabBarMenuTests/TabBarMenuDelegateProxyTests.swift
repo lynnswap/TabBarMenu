@@ -5,7 +5,7 @@ import UIKit
 @Test("menuDelegate restores an existing tab bar controller delegate when unset")
 @MainActor
 func menuDelegateRestoresExistingTabBarControllerDelegateWhenUnset() {
-    let controller = UITabBarController(tabs: makeTabs(count: 2))
+    let controller = makeTestTabBarController(tabs: makeTabs(count: 2))
     let originalDelegate = RecordingTabBarControllerDelegate()
     let menuDelegate = TestMenuDelegate()
     controller.delegate = originalDelegate
@@ -23,7 +23,7 @@ func menuDelegateRestoresExistingTabBarControllerDelegateWhenUnset() {
 @Test("delegate proxy forwards selection callbacks")
 @MainActor
 func delegateProxyForwardsSelectionCallbacks() {
-    let controller = UITabBarController(tabs: makeTabs(count: 2))
+    let controller = makeTestTabBarController(tabs: makeTabs(count: 2))
     let proxy = TabBarMenuTabBarControllerDelegateProxy()
     let originalDelegate = RecordingTabBarControllerDelegate()
     let selectedViewController = UIViewController()
@@ -44,7 +44,7 @@ func delegateProxyForwardsSelectionCallbacks() {
 @Test("delegate proxy forwards displayed view controllers when no override is active")
 @MainActor
 func delegateProxyForwardsDisplayedViewControllersWhenNoOverrideIsActive() {
-    let controller = UITabBarController(tabs: makeTabs(count: 2))
+    let controller = makeTestTabBarController(tabs: makeTabs(count: 2))
     let proxy = TabBarMenuTabBarControllerDelegateProxy()
     let originalDelegate = RecordingTabBarControllerDelegate()
     let proposedViewController = UIViewController()

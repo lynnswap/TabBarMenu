@@ -323,7 +323,7 @@ func nativeMoreNavigationWithNavigationTabs(usesUITab: Bool) async throws {
     let tabs = owners.enumerated().map { index, owner in
         UITab(title: "Tab \(index)", image: nil, identifier: "tab.\(index)") { _ in owner }
     }
-    let controller = UITabBarController()
+    let controller = makeTestTabBarController()
     if usesUITab {
         controller.tabs = tabs
     } else {

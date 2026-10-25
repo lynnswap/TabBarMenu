@@ -71,7 +71,7 @@ private struct DelegateMutationContext {
         tabs = viewControllers.enumerated().map { index, viewController in
             UITab(title: "Tab \(index)", image: nil, identifier: "tab.\(index)") { _ in viewController }
         }
-        controller = UITabBarController()
+        controller = makeTestTabBarController()
         if usesUITab {
             controller.tabs = tabs
         } else {
@@ -106,7 +106,9 @@ private struct DelegateMutationContext {
 
     /// Supplies the UIKit selection callbacks after the real tab-bar interception boundary.
     func tap(at index: Int) throws {
-        let control = tabBarOrderedControls(in: controller.tabBar)[index]
+        let controls = tabBarOrderedControls(in: controller.tabBar)
+        try #require(controls.indices.contains(index), "Expected native tab control \(index).")
+        let control = controls[index]
         let handler = try #require(controller.tabBar.tabBarMenuControlSelectionHandler)
         #expect(handler(controller.tabBar, control) == true)
         let delegate = try #require(controller.delegate as? TabBarMenuTabBarControllerDelegateProxy)
