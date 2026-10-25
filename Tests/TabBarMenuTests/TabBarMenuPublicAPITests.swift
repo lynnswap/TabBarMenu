@@ -49,7 +49,7 @@ func defaultAboveOffsetFollowsRuntimeMajorVersion() {
 @Test("updateTabBarMenu returns false when no menu host exists")
 @MainActor
 func updateTabBarMenuReturnsFalseWhenNoMenuHostExists() {
-    let controller = UITabBarController()
+    let controller = makeTestTabBarController()
     var updateCallCount = 0
 
     let didUpdate = controller.updateTabBarMenu { currentMenu in

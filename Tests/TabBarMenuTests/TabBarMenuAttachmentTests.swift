@@ -204,7 +204,7 @@ func menuDelegateAttachesLongPressGestures() async {
 @Test("menuDelegate attaches long-press gestures for viewControllers")
 @MainActor
 func menuDelegateAttachesLongPressGesturesForViewControllers() async {
-    let controller = UITabBarController()
+    let controller = makeTestTabBarController()
     let viewControllers = makeViewControllers(count: 3)
     controller.setViewControllers(viewControllers, animated: false)
     let host = WindowHost(rootViewController: controller)
@@ -226,7 +226,7 @@ func menuDelegateAttachesLongPressGesturesForViewControllers() async {
 @Test("RTL fallback ordering maps indices to right-to-left controls")
 @MainActor
 func rtlFallbackOrderingMapsIndicesToRightToLeftControls() async {
-    let controller = UITabBarController()
+    let controller = makeTestTabBarController()
     let viewControllers = makeViewControllersWithNoViewItems(count: 3)
     controller.setViewControllers(viewControllers, animated: false)
     controller.tabBar.semanticContentAttribute = .forceRightToLeft
@@ -250,7 +250,7 @@ func rtlFallbackOrderingMapsIndicesToRightToLeftControls() async {
 @Test("LTR fallback ordering maps indices to left-to-right controls")
 @MainActor
 func ltrFallbackOrderingMapsIndicesToLeftToRightControls() async {
-    let controller = UITabBarController()
+    let controller = makeTestTabBarController()
     let viewControllers = makeViewControllersWithNoViewItems(count: 3)
     controller.setViewControllers(viewControllers, animated: false)
     controller.tabBar.semanticContentAttribute = .forceLeftToRight
@@ -328,7 +328,7 @@ func menuDelegateRefreshesLongPressGesturesWhenTabsChange() async {
 @Test("menuDelegate refreshes long-press gestures when viewControllers change")
 @MainActor
 func menuDelegateRefreshesLongPressGesturesWhenViewControllersChange() async {
-    let controller = UITabBarController()
+    let controller = makeTestTabBarController()
     controller.setViewControllers(makeViewControllers(count: 2), animated: false)
     let host = WindowHost(rootViewController: controller)
     let delegate = ViewControllerMenuDelegate()

@@ -296,9 +296,18 @@ func makeNavigationContentViewController(
 }
 
 @MainActor
+func makeTestTabBarController(tabs: [UITab] = []) -> UITabBarController {
+    let controller = UITabBarController()
+    // More-selection fixtures exercise a five-item native bar regardless of device capacity.
+    #expect(setMaximumNumberOfItems(5, in: controller))
+    controller.setTabs(tabs, animated: false)
+    return controller
+}
+
+@MainActor
 func makeTabBarTestContext(tabCount: Int) -> TabBarTestContext {
     let tabs = makeTabs(count: tabCount)
-    let controller = UITabBarController(tabs: tabs)
+    let controller = makeTestTabBarController(tabs: tabs)
     let host = WindowHost(rootViewController: controller)
     return TabBarTestContext(controller: controller, host: host, tabs: tabs)
 }
@@ -306,7 +315,7 @@ func makeTabBarTestContext(tabCount: Int) -> TabBarTestContext {
 @MainActor
 func makeViewControllerTabBarTestContext(viewControllerCount: Int) -> ViewControllerTabBarTestContext {
     let viewControllers = makeViewControllers(count: viewControllerCount)
-    let controller = UITabBarController()
+    let controller = makeTestTabBarController()
     controller.setViewControllers(viewControllers, animated: false)
     let host = WindowHost(rootViewController: controller)
     return ViewControllerTabBarTestContext(
@@ -363,9 +372,18 @@ func tabBarFallbackControls(in tabBar: UITabBar) -> [UIControl] {
     return controls
 }
 @MainActor
+func tabBarItemAndControlViews(in tabBar: UITabBar) -> [UIView] {
+    var views = tabBar.items?.compactMap { tabBarItemView($0) } ?? []
+    var identities = Set(views.map(ObjectIdentifier.init))
+    for control in tabBarControls(in: tabBar) where identities.insert(ObjectIdentifier(control)).inserted {
+        views.append(control)
+    }
+    return views
+}
+@MainActor
 func menuLongPressRecognizers(in tabBar: UITabBar) -> [TabBarMenuLongPressGestureRecognizer] {
-    let controls = tabBarControls(in: tabBar)
-    return controls.flatMap { control in
+    let views = tabBarItemAndControlViews(in: tabBar)
+    return views.flatMap { control in
         (control.gestureRecognizers ?? []).compactMap { recognizer in
             recognizer as? TabBarMenuLongPressGestureRecognizer
         }
@@ -393,7 +411,7 @@ func menuLongPressDurationsByIndex(in tabBar: UITabBar) -> [Int: TimeInterval] {
 }
 @MainActor
 func menuRecognizerMinXAndIndices(in tabBar: UITabBar) -> [(minX: CGFloat, index: Int)] {
-    let controls = tabBarControls(in: tabBar)
+    let controls = tabBarItemAndControlViews(in: tabBar)
     return controls.compactMap { control in
         guard let recognizer = (control.gestureRecognizers ?? []).compactMap({ $0 as? TabBarMenuLongPressGestureRecognizer }).first else {
             return nil
@@ -415,12 +433,7 @@ func moreTabBarItem(in tabBarController: UITabBarController) -> UITabBarItem? {
 
 @MainActor
 func tabBarOrderedControls(in tabBar: UITabBar) -> [UIControl] {
-    let controls = tabBarFallbackControls(in: tabBar)
-    return controls.sorted { left, right in
-        let leftFrame = left.convert(left.bounds, to: tabBar)
-        let rightFrame = right.convert(right.bounds, to: tabBar)
-        return leftFrame.minX < rightFrame.minX
-    }
+    tabBarButtonViews(in: tabBar).compactMap { $0 as? UIControl }
 }
 
 @MainActor

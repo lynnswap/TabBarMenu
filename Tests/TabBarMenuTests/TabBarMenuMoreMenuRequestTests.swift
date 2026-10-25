@@ -5,7 +5,7 @@ import UIKit
 @Test("More preparation receives the current overflow tabs")
 @MainActor
 func morePreparationReceivesOverflowTabs() {
-    let controller = UITabBarController()
+    let controller = makeTestTabBarController()
     #expect(setMaximumNumberOfItems(4, in: controller))
     controller.tabs = makeTabs(count: 6)
     let host = WindowHost(rootViewController: controller)

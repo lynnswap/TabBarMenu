@@ -40,7 +40,7 @@ func stagedOverflowReselectionPreservesNavigationContent(
     let tabs = navigationControllers.enumerated().map { index, navigationController in
         UITab(title: "Tab \(index)", image: nil, identifier: "tab.\(index)") { _ in navigationController }
     }
-    let controller = UITabBarController()
+    let controller = makeTestTabBarController()
     controller.mode = .tabBar
     controller.traitOverrides.horizontalSizeClass = .compact
     let delegate = MoreTabSelectionDelegate()
@@ -99,7 +99,7 @@ func moreNavigationTabsRestoreRootsWhenSwitchingContent() async throws {
     let tabs = navigationControllers.enumerated().map { index, navigationController in
         UITab(title: "Tab \(index)", image: nil, identifier: "tab.\(index)") { _ in navigationController }
     }
-    let controller = UITabBarController(tabs: tabs)
+    let controller = makeTestTabBarController(tabs: tabs)
     let delegate = MoreTabSelectionDelegate()
     controller.menuDelegate = delegate
     let host = WindowHost(rootViewController: controller)
