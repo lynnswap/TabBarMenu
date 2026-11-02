@@ -689,7 +689,7 @@ func visibleTabTapDefersOverflowCleanupUntilSelectionCompletes() async {
 
 @Test("active UITab overflow keeps the More control resolvable")
 @MainActor
-func activeUITabOverflowKeepsMoreControlResolvable() async {
+func activeUITabOverflowKeepsMoreControlResolvable() async throws {
     let context = makeTabBarTestContext(tabCount: 7)
     let delegate = MoreTabSelectionDelegate()
 
@@ -706,13 +706,16 @@ func activeUITabOverflowKeepsMoreControlResolvable() async {
     #expect(moreControl != nil)
     #expect(firstControl != nil)
 
-    if let controlHandler, let moreControl, let firstControl {
+    if let controlHandler, let firstControl {
         #expect(requestMoreMenu(in: context.controller, delegate: delegate) != nil)
         delegate.performSelection(titled: overflowTab.title)
         await drainMainQueue()
 
         #expect(controlHandler(context.controller.tabBar, firstControl) == true)
-        #expect(moreTabBarControl(in: context.controller) === moreControl)
+        let currentMoreControl = try #require(moreTabBarControl(in: context.controller))
+        let requestedCount = delegate.requestedTabs.count
+        #expect(controlHandler(context.controller.tabBar, currentMoreControl) == false)
+        #expect(delegate.requestedTabs.count == requestedCount + 1)
     }
 }
 
