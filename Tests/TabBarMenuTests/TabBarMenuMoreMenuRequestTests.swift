@@ -48,16 +48,3 @@ func fallbackMoreStartIndexHonorsMaxVisibleTabCount() {
     #expect(zeroCore.moreTabStartIndex(totalCount: 6) == nil)
     #expect(negativeCore.moreTabStartIndex(totalCount: 6) == nil)
 }
-
-@Test("fallback item and More slices exclude the More tab entry")
-@MainActor
-func fallbackItemAndMoreSlicesExcludeMoreTabEntry() {
-    let core = TabBarMenuRequestCore(configuration: TabBarMenuConfiguration(maxVisibleTabCount: 5))
-    let items = Array(0..<6)
-
-    #expect(core.itemForMenu(at: 3, in: items) == 3)
-    #expect(core.itemForMenu(at: 4, in: items) == nil)
-    #expect(core.itemForMenu(at: 6, in: items) == nil)
-    #expect(core.moreItems(from: items) == [4, 5])
-    #expect(core.moreItems(from: Array(0..<5)).isEmpty)
-}

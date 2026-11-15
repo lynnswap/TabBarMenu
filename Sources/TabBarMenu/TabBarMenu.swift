@@ -1,9 +1,5 @@
-// The Swift Programming Language
-// https://docs.swift.org/swift-book
-
 import UIKit
 import ObjectiveC
-
 
 /// Defines where the menu anchor should be placed within the container view.
 public enum TabBarMenuAnchorPlacement: Equatable {
@@ -227,29 +223,12 @@ public extension UITabBarController {
 
     private var tabBarMenuConfiguration: TabBarMenuConfiguration {
         get {
-            if let box: TabBarMenuConfigurationBox = ObjectiveCInterop.associatedObject(
-                for: self,
-                key: &TabBarMenuAssociatedKeys.configuration
-            ) {
-                return box.value
-            }
-            let defaultValue = TabBarMenuConfiguration()
-            ObjectiveCInterop.setAssociatedObject(
-                TabBarMenuConfigurationBox(defaultValue),
-                for: self,
-                key: &TabBarMenuAssociatedKeys.configuration,
-                policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-            return defaultValue
+            ObjectiveCInterop.associatedObject(for: self, key: &TabBarMenuAssociatedKeys.configuration)
+                ?? TabBarMenuConfiguration()
         }
         set {
-            let box = (ObjectiveCInterop.associatedObject(
-                for: self,
-                key: &TabBarMenuAssociatedKeys.configuration
-            ) as TabBarMenuConfigurationBox?) ?? TabBarMenuConfigurationBox(newValue)
-            box.value = newValue
             ObjectiveCInterop.setAssociatedObject(
-                box,
+                newValue,
                 for: self,
                 key: &TabBarMenuAssociatedKeys.configuration,
                 policy: .OBJC_ASSOCIATION_RETAIN_NONATOMIC
@@ -259,17 +238,8 @@ public extension UITabBarController {
     }
 }
 
-
 @MainActor
 private enum TabBarMenuAssociatedKeys {
     static var coordinator = UInt8(0)
     static var configuration = UInt8(1)
-}
-
-private final class TabBarMenuConfigurationBox {
-    var value: TabBarMenuConfiguration
-
-    init(_ value: TabBarMenuConfiguration) {
-        self.value = value
-    }
 }
