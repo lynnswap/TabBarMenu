@@ -801,13 +801,6 @@ extension UITabBarController {
         )
     }
 
-    private func isMoreTabElement(_ tab: UITab) -> Bool {
-        ObjectiveCInterop.performBoolSelector(
-            UITabRuntimeMethodNames.isMoreTab,
-            on: tab
-        ) ?? false
-    }
-
     private func resolvedMoreSelectionViewController(for tab: UITab) -> UIViewController? {
         if let viewController = tab.viewController {
             return viewController

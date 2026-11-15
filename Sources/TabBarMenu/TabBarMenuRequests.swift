@@ -1,21 +1,11 @@
 import UIKit
 
 @MainActor
-struct PresentationContext {
-    let containerView: UIView
-    let tabFrame: CGRect
-}
-
-@MainActor
 struct TabBarMenuRequestCore {
     let configuration: TabBarMenuConfiguration
 
     init(configuration: TabBarMenuConfiguration) {
         self.configuration = configuration
-    }
-
-    func moreTabStartIndex(totalCount: Int) -> Int? {
-        fallbackMoreTabStartIndex(totalCount: totalCount)
     }
 
     func moreTabStartIndex(totalCount: Int, in tabBarController: UITabBarController) -> Int? {
@@ -32,22 +22,16 @@ struct TabBarMenuRequestCore {
             return effectiveMaxItems - 1
         }
 
-        return fallbackMoreTabStartIndex(totalCount: totalCount)
+        return moreTabStartIndex(totalCount: totalCount)
     }
 
-    private func fallbackMoreTabStartIndex(totalCount: Int) -> Int? {
-        let maxVisibleCount = max(configuration.maxVisibleTabCount, 0)
+    /// The start index from the configuration, used when UIKit's runtime value cannot be resolved.
+    func moreTabStartIndex(totalCount: Int) -> Int? {
+        let maxVisibleCount = configuration.maxVisibleTabCount
         guard maxVisibleCount > 0, totalCount > maxVisibleCount else {
             return nil
         }
         return maxVisibleCount - 1
-    }
-
-    func isMoreTabIndex(_ index: Int, totalCount: Int) -> Bool {
-        guard let startIndex = moreTabStartIndex(totalCount: totalCount) else {
-            return false
-        }
-        return index == startIndex
     }
 
     func isMoreTabIndex(_ index: Int, totalCount: Int, in tabBarController: UITabBarController) -> Bool {
@@ -57,33 +41,12 @@ struct TabBarMenuRequestCore {
         return index == startIndex
     }
 
-    func itemForMenu<T>(at index: Int, in items: [T]) -> T? {
-        guard !items.isEmpty else {
-            return nil
-        }
-        guard items.indices.contains(index), isMoreTabIndex(index, totalCount: items.count) == false else {
-            return nil
-        }
-        return items[index]
-    }
-
     func itemForMenu<T>(at index: Int, in items: [T], tabBarController: UITabBarController) -> T? {
-        guard !items.isEmpty else {
-            return nil
-        }
         guard items.indices.contains(index),
               isMoreTabIndex(index, totalCount: items.count, in: tabBarController) == false else {
             return nil
         }
         return items[index]
-    }
-
-    func moreItems<T>(from items: [T]) -> [T] {
-        guard let startIndex = moreTabStartIndex(totalCount: items.count),
-              items.indices.contains(startIndex) else {
-            return []
-        }
-        return Array(items[startIndex...])
     }
 
     func moreItems<T>(from items: [T], tabBarController: UITabBarController) -> [T] {
@@ -150,14 +113,6 @@ extension TabBarMenuRequestContext {
 
     func itemForMenu(at index: Int, in tabBarController: UITabBarController) -> Item? {
         core.itemForMenu(at: index, in: items(in: tabBarController), tabBarController: tabBarController)
-    }
-
-    func matchesItem(_ item: UITabBarItem, in tabBarController: UITabBarController) -> Bool {
-        guard let items = tabBarController.tabBar.items,
-              let index = items.firstIndex(where: { $0 === item }) else {
-            return false
-        }
-        return core.isMoreTabIndex(index, totalCount: totalCount(in: tabBarController), in: tabBarController)
     }
 }
 

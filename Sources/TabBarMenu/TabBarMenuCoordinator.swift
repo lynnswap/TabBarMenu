@@ -2,20 +2,16 @@ import UIKit
 
 func tabBarMenuAnchorFrame(
     tabFrame: CGRect,
-    placement: TabBarMenuAnchorPlacement?
-) -> CGRect? {
-    let anchorPoint: CGPoint?
-    switch placement ?? .above() {
+    placement: TabBarMenuAnchorPlacement
+) -> CGRect {
+    let anchorPoint: CGPoint
+    switch placement {
     case .inside:
         anchorPoint = CGPoint(x: tabFrame.midX, y: (tabFrame.maxY + tabFrame.midY) * 0.5)
     case .above(let offset):
         anchorPoint = CGPoint(x: tabFrame.midX, y: tabFrame.minY - offset)
     case .custom(let point):
         anchorPoint = point
-    }
-
-    guard let anchorPoint else {
-        return nil
     }
 
     let anchorSize: CGFloat = 2
@@ -161,18 +157,16 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             cancelTabBarTracking(for: sourceView)
         }
         if let presentation {
-            if let context = makePresentationContext(for: sourceView, in: tabBarController) {
-                let hostButton = makeMenuHostButton(in: context.containerView)
-                hostButton.preferredMenuElementOrder = presentation.preferredMenuElementOrder
-                presentMenu(
-                    presentation.menu,
-                    tabFrame: context.tabFrame,
-                    in: context.containerView,
-                    placement: presentation.anchorPlacement,
-                    hostButton: hostButton,
-                    sourceView: sourceView
-                )
-            }
+            let containerView: UIView = tabBarController.view
+            let hostButton = makeMenuHostButton(in: containerView)
+            hostButton.preferredMenuElementOrder = presentation.preferredMenuElementOrder
+            hostButton.frame = tabBarMenuAnchorFrame(
+                tabFrame: sourceView.convert(sourceView.bounds, to: containerView),
+                placement: presentation.anchorPlacement
+            )
+            hostButton.menu = presentation.menu
+            hostButton.performPrimaryAction()
+            cancelTabBarTracking(for: sourceView)
             return false
         }
         guard interaction == .tap else { return false }
@@ -475,38 +469,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
 
     // MARK: - Menu presentation
 
-    private func makePresentationContext(for sourceView: UIView, in tabBarController: UITabBarController) -> PresentationContext? {
-        guard let containerView = tabBarController.view ?? sourceView.window?.rootViewController?.view else {
-            return nil
-        }
-        let tabFrame = sourceView.convert(sourceView.bounds, to: containerView)
-        return PresentationContext(containerView: containerView, tabFrame: tabFrame)
-    }
-
-    private func presentMenu(from button: UIButton) {
-        button.performPrimaryAction()
-    }
-
-    private func presentMenu(
-        _ menu: UIMenu,
-        tabFrame: CGRect,
-        in _: UIView,
-        placement: TabBarMenuAnchorPlacement?,
-        hostButton: UIButton,
-        sourceView: UIView
-    ) {
-        if let anchorFrame = tabBarMenuAnchorFrame(
-            tabFrame: tabFrame,
-            placement: placement
-        ) {
-            hostButton.frame = anchorFrame
-        }
-
-        hostButton.menu = menu
-        presentMenu(from: hostButton)
-        cancelTabBarTracking(for: sourceView)
-    }
-
     private func cancelTabBarTracking(for view: UIView?) {
         if let control = view as? UIControl {
             control.isHighlighted = false
@@ -563,9 +525,18 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return indexedViews
         }
 
+        return controls.prefix(items.count).enumerated().map { index, view in
+            (index, view)
+        }
+    }
+
+    /// The controls that stand in for item views, in the visual order of the items.
+    private func tabBarFallbackControls(in tabBar: UITabBar) -> [UIControl] {
+        let controls = tabBarControls(in: tabBar)
+        let topLevelControls = controls.filter { $0.superview === tabBar }
         let isRTL = tabBar.effectiveUserInterfaceLayoutDirection == .rightToLeft
         // Match the visual order so indices align with items in RTL.
-        let sortedControls = controls.sorted { left, right in
+        return (topLevelControls.isEmpty ? controls : topLevelControls).sorted { left, right in
             let leftFrame = left.convert(left.bounds, to: tabBar)
             let rightFrame = right.convert(right.bounds, to: tabBar)
             if isRTL {
@@ -573,19 +544,6 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             }
             return leftFrame.minX < rightFrame.minX
         }
-        let count = min(sortedControls.count, items.count)
-        return sortedControls.prefix(count).enumerated().map { index, view in
-            (index, view)
-        }
-    }
-
-    private func tabBarFallbackControls(in tabBar: UITabBar) -> [UIControl] {
-        let controls = tabBarControls(in: tabBar)
-        let topLevelControls = controls.filter { $0.superview === tabBar }
-        if !topLevelControls.isEmpty {
-            return topLevelControls
-        }
-        return controls
     }
 
     private func makeMenuHostButton(in containerView: UIView) -> UIButton {
@@ -629,10 +587,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
     // MARK: - Private API helpers
 
     private func tabBarItemView(_ item: UITabBarItem) -> UIView? {
-        if let view = performSelector(UITabBarItemRuntimeMethodNames.view, on: item) as? UIView {
-            return view
-        }
-        return nil
+        ObjectiveCInterop.performObjectSelector(UITabBarItemRuntimeMethodNames.view, on: item) as? UIView
     }
 
     func resolvedTabIndex(
@@ -656,26 +611,7 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
             return nil
         }
 
-        let fallbackControls = tabBarFallbackControls(in: tabBarController.tabBar)
-        guard !fallbackControls.isEmpty else {
-            return nil
-        }
-
-        let isRTL = tabBarController.tabBar.effectiveUserInterfaceLayoutDirection == .rightToLeft
-        let sortedControls = fallbackControls.sorted { left, right in
-            let leftFrame = left.convert(left.bounds, to: tabBarController.tabBar)
-            let rightFrame = right.convert(right.bounds, to: tabBarController.tabBar)
-            if isRTL {
-                return leftFrame.minX > rightFrame.minX
-            }
-            return leftFrame.minX < rightFrame.minX
-        }
-
-        return sortedControls.firstIndex(where: { $0 === control })
-    }
-
-    private func performSelector(_ name: String, on object: NSObject) -> AnyObject? {
-        ObjectiveCInterop.performObjectSelector(name, on: object)
+        return tabBarFallbackControls(in: tabBarController.tabBar).firstIndex(where: { $0 === control })
     }
 }
 

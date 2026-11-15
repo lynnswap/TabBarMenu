@@ -29,7 +29,7 @@ func anchorPlacementDefaultsAboveTheTab() {
 
     #expect(tabBarMenuAnchorFrame(
         tabFrame: tabFrame,
-        placement: nil
+        placement: TabBarMenuPresentation(menu: UIMenu()).anchorPlacement
     ) == CGRect(x: 49, y: expectedAnchorY - 1, width: 2, height: 2))
 }
 
