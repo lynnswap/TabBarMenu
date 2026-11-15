@@ -382,7 +382,7 @@ func moreMenuRequestDeduplicatesOverflowViewControllers() async {
 
     #expect(preservedMoreItem != nil)
 
-    if let preservedMoreItem {
+    if preservedMoreItem != nil {
         #expect(requestMoreMenu(in: context.controller, delegate: delegate) != nil)
         #expect(delegate.requestedViewControllers.last?.map(ObjectIdentifier.init) == [
             ObjectIdentifier(context.viewControllers[4]),
