@@ -108,6 +108,36 @@ final class TabBarDemoUITests: XCTestCase {
         XCTAssertTrue(waitForMoreMenuItem(named: "Extra 3", in: tabBar, timeout: Timing.short).exists)
     }
 
+    /// A tab bar that shows only its selected tab, as on a closed iPhone Duo with more tabs than fit.
+    @MainActor
+    func testLongPressOnCollapsedTabBarExpandsWithoutMenu() throws {
+        launchApp()
+        addTabs(count: 7)
+        let homeTab = app.buttons["Home"].firstMatch
+        let profileTab = app.buttons["Profile"].firstMatch
+        XCTAssertTrue(homeTab.waitForExistence(timeout: Timing.ui))
+        try XCTSkipIf(profileTab.isHittable, "The tab bar shows every tab on this device.")
+
+        // The first expansion lays the tab bar out, which attaches the menu gestures to the added tabs.
+        homeTab.tap()
+        profileTab.tap()
+        let moreTab = app.buttons["More"].firstMatch
+        let collapsed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == false"), object: moreTab)
+        XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 10), .completed)
+
+        profileTab.press(forDuration: Timing.menuPress)
+        XCTAssertFalse(waitForMenuItem(named: "Rename", timeout: Timing.short).exists)
+        // UIKit selects the tab under the lifted finger, which is More.
+        let overflowItem = waitForMenuItem(named: "Extra 5", timeout: Timing.short)
+        XCTAssertTrue(overflowItem.exists)
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.9)).tap()
+        XCTAssertTrue(waitForElementToDisappear(overflowItem, timeout: Timing.ui))
+
+        XCTAssertTrue(moreTab.isHittable)
+        profileTab.press(forDuration: Timing.menuPress)
+        XCTAssertTrue(waitForMenuItem(named: "Rename", timeout: Timing.short).exists)
+    }
+
     @MainActor
     func testNativeMoreRowAfterDelegateReplacement() {
         assertNativeMoreRowAfterDelegateReplacement(usesViewControllers: false)
