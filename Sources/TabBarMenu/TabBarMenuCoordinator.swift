@@ -1,4 +1,5 @@
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 func tabBarMenuAnchorFrame(
     tabFrame: CGRect,
@@ -577,6 +578,12 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
         _ = handleInteraction(.longPress, at: currentTabIndex, sourceView: view)
     }
 
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        // A tab bar that shows only its selected tab expands while it is pressed, before the long
+        // press begins. That press opens the bar. It is not a long press on the tab.
+        (gestureRecognizer as? TabBarMenuLongPressGestureRecognizer)?.hasViewResizedDuringPress != true
+    }
+
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
@@ -618,6 +625,26 @@ final class TabBarMenuCoordinator: NSObject, UIGestureRecognizerDelegate {
 @MainActor
 final class TabBarMenuLongPressGestureRecognizer: UILongPressGestureRecognizer {
     var tabIndex: Int = 0
+    private var sizeWhenPressBegan: CGSize?
+
+    /// Whether UIKit has laid out the pressed tab at another size since the press began, as it
+    /// does when a tab bar that shows its selected tab without a title expands.
+    var hasViewResizedDuringPress: Bool {
+        guard let sizeWhenPressBegan, let view else { return false }
+        return view.bounds.size != sizeWhenPressBegan
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        if sizeWhenPressBegan == nil {
+            sizeWhenPressBegan = view?.bounds.size
+        }
+        super.touchesBegan(touches, with: event)
+    }
+
+    override func reset() {
+        sizeWhenPressBegan = nil
+        super.reset()
+    }
 }
 
 private final class MenuHostButton: UIButton {
