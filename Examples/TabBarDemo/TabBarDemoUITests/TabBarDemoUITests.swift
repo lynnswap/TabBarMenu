@@ -138,6 +138,18 @@ final class TabBarDemoUITests: XCTestCase {
         XCTAssertTrue(waitForMenuItem(named: "Rename", timeout: Timing.short).exists)
     }
 
+    /// A closed iPhone Duo shows the tabs that fit without their titles, and adds the titles while
+    /// the tab bar is pressed.
+    @MainActor
+    func testLongPressOnTabOpensMenuWhileTabBarAddsTitles() {
+        launchApp()
+        let notificationsTab = app.buttons["Notifications"].firstMatch
+        XCTAssertTrue(notificationsTab.waitForExistence(timeout: Timing.ui))
+
+        notificationsTab.press(forDuration: Timing.menuPress)
+        XCTAssertTrue(waitForMenuItem(named: "Rename", timeout: Timing.short).exists)
+    }
+
     @MainActor
     func testNativeMoreRowAfterDelegateReplacement() {
         assertNativeMoreRowAfterDelegateReplacement(usesViewControllers: false)
