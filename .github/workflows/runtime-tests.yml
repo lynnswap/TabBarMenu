@@ -93,7 +93,7 @@ jobs:
             ${{ runner.temp }}/build.log
             ${{ runner.temp }}/tests.log
             ${{ runner.temp }}/tests.xcresult
-          retention-days: 1
+          retention-days: 7
           if-no-files-found: ignore
       - name: Delete the test Simulator
         if: always() && env.SIMULATOR_UDID != ''
