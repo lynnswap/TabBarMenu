@@ -85,7 +85,7 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/tests.xcresult" \
             | tee "$RUNNER_TEMP/tests.log"
       - name: Upload test diagnostics
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tests-${{ inputs.runner }}-iOS-${{ matrix.version }}
@@ -93,6 +93,7 @@ jobs:
             ${{ runner.temp }}/build.log
             ${{ runner.temp }}/tests.log
             ${{ runner.temp }}/tests.xcresult
+          retention-days: 1
           if-no-files-found: ignore
       - name: Delete the test Simulator
         if: always() && env.SIMULATOR_UDID != ''
